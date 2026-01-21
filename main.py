@@ -76,4 +76,5 @@ async def on_member_join(member):
                 print(f"User {member.name} ge DM lock karala thiyenne.")
 
 # Me thitheta oyage Bot Token eka danna
+
 bot.run(os.environ.get('MY_BOT_TOKEN'))
