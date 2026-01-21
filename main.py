@@ -1,97 +1,102 @@
 import discord
 from discord.ext import commands
-from PIL import Image, ImageDraw, ImageOps, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 import io
 import requests
-import os
-import subprocess
-import sys
 
-# 1. Bot intents set kirima
+# 1. Setup Intents (Fixes your Warning)
 intents = discord.Intents.default()
-intents.members = True 
-intents.message_content = True 
+intents.members = True          # To detect new members joining
+intents.message_content = True  # To read commands (fixes the warning you saw)
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Configuration
-WELCOME_CHANNEL_ID = 1463499215954247711 
-
 @bot.event
 async def on_ready():
-    print(f'Bot {bot.user.name} online inne!')
+    print(f'---')
+    print(f'Bot is Online: {bot.user.name}')
+    print(f'ID: {bot.user.id}')
+    print(f'---')
 
-# --- 2. UPDATE COMMAND (GitHub eken aran auto restart wenna) ---
-@bot.command()
-async def update(ctx):
-    # Kaata hari restart karanna oni nam me command eka gahanna puluwan
-    msg = await ctx.send("🔄 GitHub එකෙන් අලුත් Code එක ගන්නවා...")
-    try:
-        output = subprocess.check_output(['git', 'pull']).decode("utf-8")
-        await msg.edit(content=f"✅ Code Updated:\n```{output}```\nRestarting...")
-        # VPS eke restart wenna
-        os.execv(sys.executable, ['python'] + sys.argv)
-    except Exception as e:
-        await msg.edit(content=f"❌ Error: {e}")
-
-# --- 3. WELCOME IMAGE FIXES ---
 @bot.event
 async def on_member_join(member):
+    # --- CONFIGURATION ---
+    # Replace with your actual Welcome Channel ID
+    WELCOME_CHANNEL_ID = 123456789012345678 
+    # Use a backup font if arial isn't found
+    font_path = "arial.ttf" 
+    
+    # 2. Create the Custom Image Card
     try:
-        # Background image eka load karaganna
+        # Load and resize background
         background = Image.open("background.png").convert("RGBA")
-        bg_w, bg_h = background.size
-
-        # Userge profile picture eka download karaganna
-        pfp_url = member.avatar.url if member.avatar else member.default_avatar.url
-        response = requests.get(pfp_url)
-        pfp_img = Image.open(io.BytesIO(response.content)).convert("RGBA")
+        background = background.resize((900, 500))
         
-        # Profile picture eka resize karala circle ekak karanna
+        # Fetch User Avatar
+        avatar_url = member.display_avatar.url
+        response = requests.get(avatar_url)
+        avatar_data = io.BytesIO(response.content)
+        avatar_img = Image.open(avatar_data).convert("RGBA")
+        
+        # Create Circular Avatar with Decoration (Border)
         size = (200, 200)
-        pfp_img = pfp_img.resize(size, Image.LANCZOS)
+        avatar_img = avatar_img.resize(size)
+        
         mask = Image.new('L', size, 0)
         draw_mask = ImageDraw.Draw(mask)
         draw_mask.ellipse((0, 0) + size, fill=255)
         
-        output_pfp = ImageOps.fit(pfp_img, mask.size, centering=(0.5, 0.5))
-        output_pfp.putalpha(mask)
-
-        # Background eke hariyatama medata paste kirima
-        offset = ((bg_w - size[0]) // 2, (bg_h - size[1]) // 2 - 50)
-        background.paste(output_pfp, offset, output_pfp)
-
-        # Userge nama add kirima
+        # Create a white border/decoration circle
+        output = ImageOps.fit(avatar_img, mask.size, centering=(0.5, 0.5))
+        output.putalpha(mask)
+        
+        # Paste Avatar onto Background (Centered)
+        background.paste(output, (350, 50), output)
+        
+        # Draw Text (Username)
         draw = ImageDraw.Draw(background)
         try:
-            # VPS eke arial nathnam default ekak gannawa
-            font = ImageFont.truetype("arial.ttf", 50)
+            name_font = ImageFont.truetype(font_path, 50)
+            sub_font = ImageFont.truetype(font_path, 30)
         except:
-            font = ImageFont.load_default()
+            name_font = ImageFont.load_default()
+            sub_font = ImageFont.load_default()
 
-        text = f"{member.name}"
+        username_text = f"{member.name}"
+        welcome_text = "WELCOME TO THE SERVER"
         
-        # Text eka medata ganna calculations (Fixed)
-        if hasattr(draw, 'textbbox'):
-            bbox = draw.textbbox((0, 0), text, font=font)
-            w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        else:
-            w, h = draw.textsize(text, font=font)
+        # Calculate text positions to center them
+        name_width = draw.textlength(username_text, font=name_font)
+        welcome_width = draw.textlength(welcome_text, font=sub_font)
+        
+        draw.text(((900 - name_width) / 2, 280), username_text, fill="white", font=name_font)
+        draw.text(((900 - welcome_width) / 2, 350), welcome_text, fill="#f0f0f0", font=sub_font)
 
-        draw.text(((bg_w - w) // 2, offset[1] + size[1] + 30), text, fill="white", font=font)
-
-        # Image eka memory ekata save karala yawanna
+        # 3. Save to Buffer
         with io.BytesIO() as image_binary:
             background.save(image_binary, 'PNG')
             image_binary.seek(0)
             
+            # 4. Send to Server Channel
             channel = bot.get_channel(WELCOME_CHANNEL_ID)
             if channel:
-                await channel.send(f"Welcome to the server, {member.mention}!", file=discord.File(fp=image_binary, filename='welcome.png'))
-                
+                discord_file = discord.File(fp=image_binary, filename='welcome.png')
+                await channel.send(f"Welcome to the family, {member.mention}!", file=discord_file)
+            
+            # 5. Send Private Message (DM)
+            try:
+                image_binary.seek(0) # Reset buffer for second use
+                dm_file = discord.File(fp=image_binary, filename='welcome.png')
+                await member.send(
+                    f"Hello {member.name}! Thanks for joining our server. "
+                    f"Please read the rules and enjoy your stay!", 
+                    file=dm_file
+                )
+            except discord.Forbidden:
+                print(f"Could not DM {member.name} because their DMs are locked.")
+
     except Exception as e:
-        print(f"Image error: {e}")
+        print(f"An error occurred while creating the image: {e}")
 
-# Bot Token eka (Mehema danna, nathnam environment variable eke 'MY_BOT_TOKEN' kiyala danna)
-bot.run(os.environ.get('MY_BOT_TOKEN', 'OYAGE_BOT_TOKEN_EKA_METHANATA_DANNA'))
-
+# Replace with your token
+bot.run('MY_BOT_TOKEN')
