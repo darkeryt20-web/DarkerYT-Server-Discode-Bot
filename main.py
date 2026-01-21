@@ -78,4 +78,5 @@ async def on_member_join(member):
         print(f"Image creation error: {e}")
 
 # වැදගත්: 'YOUR_TOKEN_HERE' වෙනුවට ඔබේ සැබෑ Token එක ඇතුළත් කරන්න
-bot.run('MY_BOT_TOKEN')
+bot.run('BOT_TOKEN')
+
