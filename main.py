@@ -1,3 +1,4 @@
+import os
 import discord
 from discord.ext import commands
 from PIL import Image, ImageDraw, ImageOps, ImageFont
@@ -78,3 +79,4 @@ async def on_member_join(member):
 # Me thitheta oyage Bot Token eka danna
 
 bot.run(os.environ.get('MY_BOT_TOKEN'))
+
