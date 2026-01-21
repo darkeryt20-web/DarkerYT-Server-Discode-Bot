@@ -39,7 +39,7 @@ async def update(ctx):
 async def on_member_join(member):
     try:
         # Background image eka load karaganna
-        background = Image.open("background.jpg").convert("RGBA")
+        background = Image.open("background.png").convert("RGBA")
         bg_w, bg_h = background.size
 
         # Userge profile picture eka download karaganna
@@ -94,3 +94,4 @@ async def on_member_join(member):
 
 # Bot Token eka (Mehema danna, nathnam environment variable eke 'MY_BOT_TOKEN' kiyala danna)
 bot.run(os.environ.get('MY_BOT_TOKEN', 'OYAGE_BOT_TOKEN_EKA_METHANATA_DANNA'))
+
