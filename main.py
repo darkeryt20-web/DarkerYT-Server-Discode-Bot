@@ -1,14 +1,11 @@
 import discord
 from discord.ext import commands
-from easy_pil import Editor, load_image_async, Font
 import os
 
 TOKEN = os.getenv('DISCORD_TOKEN')
 
-intents = discord.Intents.default()
-intents.members = True  # සාමාජිකයන් එන යන එක බලාගන්න මේක ඕනේ
-intents.message_content = True
-
+# මේක තමයි වැදගත්ම කොටස - intents ඔක්කොම ON කරන්න
+intents = discord.Intents.all()
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 WELCOME_CH_ID = 1463499215954247711
@@ -16,56 +13,26 @@ GOODBYE_CH_ID = 1463584100966465596
 
 @bot.event
 async def on_ready():
-    print(f'Bot is online as {bot.user}')
+    print(f'✅ {bot.user.name} is online and ready!')
 
-# --- Welcome Event ---
 @bot.event
 async def on_member_join(member):
-    # 1. Server එකට Image එකක් යැවීම
+    print(f"DEBUG: Member Joined -> {member.name}")
     channel = bot.get_channel(WELCOME_CH_ID)
-    
-    # Background image එක load කිරීම (ඔයාගේ background.jpg link එක මෙතනට දෙන්න)
-    # දැනට මම sample එකක් දාන්නම්, ඔයාට ඕන එකක් GitHub එකට දාලා ඒ link එක දෙන්න පුළුවන්
-    background_url = "data:image/jpeg;base64,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" 
-    
-    background = Editor(await load_image_async(background_url)).resize((800, 450))
-    avatar = Editor(await load_image_async(member.display_avatar.url)).resize((150, 150)).circle_image()
-    
-    # Avatar එක මැදට ගැනීම
-    background.paste(avatar, (325, 100))
-    
-    # නම සහ විස්තර පෙන්වීම
-    font_big = Font.poppins(size=40, variant="bold")
-    font_small = Font.poppins(size=25, variant="light")
-    
-    background.text((400, 280), f"WELCOME", color="white", font=font_big, align="center")
-    background.text((400, 330), f"{member.name}", color="yellow", font=font_big, align="center")
-    background.text((400, 380), f"You are member #{member.guild.member_count}", color="white", font=font_small, align="center")
-    
-    file = discord.File(fp=background.image_bytes, filename="welcome.png")
-    
     if channel:
-        await channel.send(f"Welcome to the server, {member.mention}!", file=file)
+        try:
+            await channel.send(f"Welcome {member.mention} to the server! ❤️")
+            print("DEBUG: Message sent successfully!")
+        except Exception as e:
+            print(f"DEBUG: Error sending message: {e}")
+    else:
+        print("DEBUG: Welcome channel not found!")
 
-    # 2. Private Message (DM) එකක් යැවීම
-    try:
-        await member.send(f"Hello {member.name}, Welcome to our server! Glad to have you here.")
-    except:
-        print(f"Couldn't send DM to {member.name}")
-
-# --- Leave Event ---
 @bot.event
 async def on_member_remove(member):
-    # Server එකට Text Message එකක් පමණක් යැවීම
+    print(f"DEBUG: Member Left -> {member.name}")
     channel = bot.get_channel(GOODBYE_CH_ID)
     if channel:
-        await channel.send(f"Goodbye **{member.name}**! We hope to see you again soon.")
-
-    # Private Message (DM) එකක් යැවීම
-    try:
-        await member.send(f"Goodbye {member.name}. Sorry to see you leaving the server!")
-    except:
-        print(f"Couldn't send DM to {member.name}")
+        await channel.send(f"Goodbye {member.name}! 👋")
 
 bot.run(TOKEN)
-
