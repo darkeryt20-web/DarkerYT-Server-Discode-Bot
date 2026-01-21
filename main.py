@@ -2,97 +2,84 @@ import discord
 from discord.ext import commands
 from easy_pil import Editor, load_image_async, Font
 import os
+from flask import Flask, render_template_string
+from threading import Thread
+from datetime import datetime
 
+# --- Flask Web Server Setup ---
+app = Flask(__name__)
+member_data = [] # මෙතන තමයි විස්තර සේව් වෙන්නේ
+
+@app.route('/')
+def index():
+    # වෙබ් අඩවියේ පෙනුම (Simple HTML Table)
+    html = '''
+    <html>
+    <head>
+        <title>Server Members Log</title>
+        <style>
+            body { font-family: Arial, sans-serif; background: #2c2f33; color: white; text-align: center; }
+            table { width: 80%; margin: 20px auto; border-collapse: collapse; }
+            th, td { border: 1px solid #444; padding: 10px; }
+            th { background: #7289da; }
+            img { border-radius: 50%; width: 40px; }
+        </style>
+    </head>
+    <body>
+        <h2>📥 Recent Joined Members</h2>
+        <table>
+            <tr>
+                <th>Avatar</th>
+                <th>Name</th>
+                <th>Joined Time (UTC)</th>
+            </tr>
+            {% for member in data %}
+            <tr>
+                <td><img src="{{ member.avatar }}"></td>
+                <td>{{ member.name }}</td>
+                <td>{{ member.time }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </body>
+    </html>
+    '''
+    return render_template_string(html, data=member_data)
+
+def run():
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+
+# --- Discord Bot Setup ---
 TOKEN = os.getenv('DISCORD_TOKEN')
-
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 WELCOME_CH_ID = 1463499215954247711
-GOODBYE_CH_ID = 1463584100966465596
 
 @bot.event
 async def on_ready():
-    print(f'✅ Bot is online: {bot.user}')
-
-async def create_welcome_card(member):
-    # 1. Background Image එක load කිරීම
-    bg_url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcShzQjsqgvoYier1vQBAMnUWlbr5zq9LC6lFg&s"
-    background = Editor(await load_image_async(bg_url)).resize((800, 450))
-    
-    # 2. Avatar එක සැකසීම
-    avatar_img = await load_image_async(member.display_avatar.url)
-    avatar = Editor(avatar_img).resize((180, 180)).circle_image()
-    
-    # 3. Decoration (Avatar Border)
-    # Argument names හරියටම දාලා තියෙනවා (position, width, height, outline, stroke_width)
-    background.ellipse(position=(310, 90), width=180, height=180, outline="white", stroke_width=5)
-    
-    # Avatar එක මැදට paste කිරීම
-    background.paste(avatar, (310, 90))
-    
-    # 4. Fonts සැකසීම
-    try:
-        font_name = Font.poppins(size=50, variant="bold")
-        font_sub = Font.poppins(size=30, variant="light")
-    except:
-        font_name = None 
-        font_sub = None
-
-    # 5. නම සහ විස්තර (Center alignment)
-    background.text((400, 300), f"{member.name}", color="#ffffff", font=font_name, align="center")
-    background.text((400, 360), "WELCOME TO THE SERVER", color="#ffcc00", font=font_sub, align="center")
-    background.text((400, 400), f"Member #{member.guild.member_count}", color="#aaaaaa", font=font_sub, align="center")
-    
-    return discord.File(fp=background.image_bytes, filename="welcome.png")
+    print(f'✅ Bot and Web Server are running!')
 
 @bot.event
 async def on_member_join(member):
-    print(f"DEBUG: {member.name} join වුණා, Card එක හදනවා...")
+    # විස්තර ලැයිස්තුවට එකතු කිරීම
+    now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    member_info = {
+        "name": member.name,
+        "avatar": member.display_avatar.url,
+        "time": now
+    }
+    member_data.insert(0, member_info) # අලුත් අයව උඩටම දාන්න
+
+    # Welcome Image කොටස (කලින් තිබුණු code එකම මෙතනට දාන්න)
     channel = bot.get_channel(WELCOME_CH_ID)
-    
-    try:
-        # Card එක සාදා ගැනීම
-        welcome_file = await create_welcome_card(member)
-        
-        # Server එකට Embed එක සහ Image එක යැවීම
-        if channel:
-            embed = discord.Embed(
-                title="✨ New Member Joined!",
-                description=f"Welcome {member.mention} to **{member.guild.name}**!",
-                color=0x2f3136
-            )
-            embed.set_image(url="attachment://welcome.png")
-            await channel.send(file=welcome_file, embed=embed)
-            print(f"✅ Server welcome message sent for {member.name}")
-
-        # Private Message (DM) එකට යැවීම
-        try:
-            dm_file = await create_welcome_card(member)
-            dm_embed = discord.Embed(
-                title=f"Welcome to {member.guild.name}!",
-                description=f"Hi {member.name}, check out your welcome card!",
-                color=discord.Color.blue()
-            )
-            dm_embed.set_image(url="attachment://welcome.png")
-            await member.send(file=dm_file, embed=dm_embed)
-        except Exception as dm_err:
-            print(f"⚠️ DM Error: {dm_err}")
-
-    except Exception as e:
-        print(f"❌ Welcome Error: {e}")
-        if channel:
-            await channel.send(f"Welcome to the server, {member.mention}!")
-
-@bot.event
-async def on_member_remove(member):
-    channel = bot.get_channel(GOODBYE_CH_ID)
     if channel:
-        embed = discord.Embed(
-            title="👋 Member Left",
-            description=f"Goodbye **{member.name}**! We hope to see you again soon.",
-            color=discord.Color.red()
-        )
-        await channel.send(embed=embed)
+        await channel.send(f"Welcome {member.mention}! විස්තර වෙබ් එකට ඇඩ් වුණා.")
 
+# Web Server එක පණ ගැන්වීම
+keep_alive()
 bot.run(TOKEN)
