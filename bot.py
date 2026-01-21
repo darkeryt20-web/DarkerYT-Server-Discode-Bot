@@ -3,7 +3,7 @@ from discord.ext import commands
 from easy_pil import Editor, load_image_async, Font
 import os
 
-TOKEN = os.getenv('DISCORD_TOKEN')
+TOKEN = os.getenv('BOT_TOKEN')
 
 # 100% ක්ම intents වැඩ කරන්න මේක ඕනේ
 intents = discord.Intents.all()
@@ -67,5 +67,6 @@ async def on_member_remove(member):
     if channel:
         await channel.send(f"Goodbye **{member.name}**! 👋")
 
-bot.run(BOT_TOKEN)
+bot.run(TOKEN)
+
 
