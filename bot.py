@@ -67,4 +67,5 @@ async def on_member_remove(member):
     if channel:
         await channel.send(f"Goodbye **{member.name}**! 👋")
 
-bot.run(TOKEN)
+bot.run(BOT_TOKEN)
+
