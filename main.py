@@ -16,6 +16,7 @@ async def on_ready():
 async def hello(ctx):
     await ctx.send('Hello there! I am online.')
 
-# Koyeb එකේදී Environment Variable එකක් විදිහට දෙන TOKEN එක ලබා ගැනීම
+
 token = os.getenv('DISCORD_TOKEN')
-bot.run('MY_TOKEN')
+bot.run(token)
+
