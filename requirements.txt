@@ -1,5 +1,5 @@
 discord.py
 easy-pil
 Pillow
-flask
 PyGithub
+pytz
