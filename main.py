@@ -24,16 +24,15 @@ async def create_welcome_card(member):
     avatar_img = await load_image_async(member.display_avatar.url)
     avatar = Editor(avatar_img).resize((180, 180)).circle_image()
     
-    # 3. Decoration (Avatar එක වටේට රවුම ඇඳීම)
-    # මීට කලින් ආපු AttributeError එක මෙතනින් fix කරලා තියෙනවා
-    background.ellipse((310, 90), 180, 180, outline="white", width=5)
+    # 3. Decoration (Avatar Border)
+    # Argument names හරියටම දාලා තියෙනවා (position, width, height, outline, stroke_width)
+    background.ellipse(position=(310, 90), width=180, height=180, outline="white", stroke_width=5)
     
     # Avatar එක මැදට paste කිරීම
     background.paste(avatar, (310, 90))
     
     # 4. Fonts සැකසීම
     try:
-        # Koyeb වල fonts නැති වුනොත් error එකක් එන එක වැලැක්වීමට try/except පාවිච්චි කරමු
         font_name = Font.poppins(size=50, variant="bold")
         font_sub = Font.poppins(size=30, variant="light")
     except:
@@ -69,7 +68,6 @@ async def on_member_join(member):
 
         # Private Message (DM) එකට යැවීම
         try:
-            # DM එකට වෙනම file එකක් ඕනේ (Discord limitation)
             dm_file = await create_welcome_card(member)
             dm_embed = discord.Embed(
                 title=f"Welcome to {member.guild.name}!",
@@ -78,13 +76,11 @@ async def on_member_join(member):
             )
             dm_embed.set_image(url="attachment://welcome.png")
             await member.send(file=dm_file, embed=dm_embed)
-            print(f"✅ DM sent to {member.name}")
         except Exception as dm_err:
-            print(f"⚠️ DM එක යවන්න බැරි වුණා: {dm_err}")
+            print(f"⚠️ DM Error: {dm_err}")
 
     except Exception as e:
         print(f"❌ Welcome Error: {e}")
-        # මොකක් හරි වැරදුනොත් අඩුම තරමේ text එක හරි යවන්න
         if channel:
             await channel.send(f"Welcome to the server, {member.mention}!")
 
