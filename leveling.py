@@ -18,11 +18,7 @@ class Leveling(commands.Cog):
             41: 10555, 42: 11020, 43: 11495, 44: 11980, 45: 12475, 46: 12980, 47: 13495, 48: 14020, 49: 14555, 50: 268275
         }
 
-        # User Database (In-memory)
         self.users = {}
-        # structure: {user_id: {"xp": 0, "level": 0, "last_msg": "", "spam_count": 0, "cooldown": timestamp, "blocked_until": timestamp}}
-
-        # Voice XP ලබාදීම සඳහා loop එකක් ආරම්භ කිරීම
         self.voice_xp_loop.start()
 
     def get_user(self, uid):
@@ -39,97 +35,109 @@ class Leveling(commands.Cog):
         current_xp = u_data["xp"]
         current_lvl = u_data["level"]
         
+        # ඊළඟ level එකට අවශ්‍ය XP තිබේදැයි බැලීම
         next_lvl = current_lvl + 1
         if next_lvl in self.xp_table and current_xp >= self.xp_table[next_lvl]:
             u_data["level"] = next_lvl
             
-            # Announce Level Up
             embed = discord.Embed(
-                title="🎊 Level Up!", 
-                description=f"{member.mention} ඔයා දැන් **Level {next_lvl}**!", 
+                title="🎊 LEVEL UP!", 
+                description=f"සුභ පැතුම් {member.mention}! ඔයා දැන් **Level {next_lvl}** ට ආවා! 🚀", 
                 color=0x00ff00
             )
-            # 1. Current Channel
-            await current_channel.send(embed=embed)
+            embed.set_thumbnail(url=member.display_avatar.url)
+
+            # 1. පණිවිඩය එවූ channel එකට
+            if current_channel:
+                await current_channel.send(embed=embed)
             
-            # 2. Log Channel
+            # 2. Log Channel එකට (ID: 1463876659320062086)
             log_ch = self.bot.get_channel(self.LOG_CH_ID)
-            if log_ch: await log_ch.send(f"📈 **{member.name}** reached Level {next_lvl}")
+            if log_ch:
+                await log_ch.send(f"📈 **{member.name}** just reached **Level {next_lvl}**!")
             
-            # 3. DM
-            try: await member.send(f"සුභ පැතුම්! ඔයා {member.guild.name} හි Level {next_lvl} වුණා!")
-            except: pass
+            # 3. Private Message (DM)
+            try:
+                await member.send(f"නියමයි! ඔයා {member.guild.name} server එකේ Level {next_lvl} වුණා!")
+            except:
+                pass
 
     @commands.Cog.listener()
     async def on_message(self, message):
-        if message.author.bot or not message.guild: return
+        if message.author.bot or not message.guild:
+            return
 
         u_data = self.get_user(message.author.id)
         now = datetime.datetime.now()
 
-        # Check if XP is blocked (24h ban)
-        if now < u_data["blocked_until"]: return
+        # XP Block වී ඇත්දැයි බැලීම (Anti-spam penalty)
+        if now < u_data["blocked_until"]:
+            return
 
-        # --- Anti-Spam Check ---
-        if message.content == u_data["last_msg"]:
+        # --- Anti-Spam Logic ---
+        if message.content.lower() == u_data["last_msg"].lower() and len(message.content) > 1:
             u_data["spam_count"] += 1
             if u_data["spam_count"] >= 3:
                 u_data["blocked_until"] = now + datetime.timedelta(days=1)
-                await message.channel.send(f"⚠️ {message.author.mention}, එකම message එක spam කළ නිසා ඔයාගේ XP පැය 24කට block කළා!")
+                await message.channel.send(f"⚠️ {message.author.mention}, ඔයා එකම පණිවිඩය කිහිපවරක් එවු නිසා ඔයාගේ XP පැය 24කට තහනම් කළා!")
                 return
             else:
-                await message.channel.send(f"🚫 {message.author.mention}, එකම message එක දාන්න එපා! (Warning {u_data['spam_count']}/3)")
+                await message.channel.send(f"🚫 {message.author.mention}, කරුණාකර spam කරන්න එපා! (Warning {u_data['spam_count']}/3)")
                 return
         else:
             u_data["last_msg"] = message.content
             u_data["spam_count"] = 0
 
-        # --- Cooldown Check (30s) ---
-        if now < u_data["cooldown"]: return
+        # --- Cooldown (30s) ---
+        if now < u_data["cooldown"]:
+            return
 
-        # --- Add XP (10-20) ---
-        xp_gain = random.randint(10, 20)
-        u_data["xp"] += xp_gain
+        # --- Give XP (10-20) ---
+        u_data["xp"] += random.randint(10, 20)
         u_data["cooldown"] = now + datetime.timedelta(seconds=30)
 
         await self.check_level_up(message.author, message.channel)
 
     @tasks.loop(minutes=1)
     async def voice_xp_loop(self):
-        """විනාඩියකට වරක් Voice XP ලබාදීම"""
+        """විනාඩියකට වරක් Voice XP ලබාදීම (Mic On/Off අදාළ නොවේ)"""
         for guild in self.bot.guilds:
             for vc in guild.voice_channels:
+                if len(vc.members) < 1: continue # කවුරුත් නැත්නම් skip කරන්න
+                
                 for member in vc.members:
                     if member.bot: continue
                     
-                    # Unmuted සහ Deafen නැතිනම් පමණක් XP දීම
-                    if not member.voice.self_mute and not member.voice.self_deaf:
-                        u_data = self.get_user(member.id)
-                        if datetime.datetime.now() < u_data["blocked_until"]: continue
-                        
-                        xp_gain = random.randint(5, 15)
-                        u_data["xp"] += xp_gain
-                        # Voice වලදී level up වුණොත් log channel එකට පමණක් දමමු
-                        log_ch = self.bot.get_channel(self.LOG_CH_ID)
-                        await self.check_level_up(member, log_ch if log_ch else vc)
+                    u_data = self.get_user(member.id)
+                    if datetime.datetime.now() < u_data["blocked_until"]:
+                        continue
+                    
+                    # මයික් එක ඕෆ් වුණත් දැන් XP ලැබෙනවා
+                    u_data["xp"] += random.randint(5, 15)
+                    
+                    # Voice වලදී level up වුණොත් log channel එකට පමණක් දමමු
+                    await self.check_level_up(member, None)
 
     @commands.command(name="level")
-    async def level(self, ctx):
-        # මෙම command එක වැඩ කරන්නේ අදාළ channel එකේ පමණි
+    async def level_cmd(self, ctx):
+        # Command එක වැඩ කරන්නේ නියමිත channel එකේ පමණි
         if ctx.channel.id != self.CMD_CH_ID:
-            return await ctx.send(f"❌ මේ command එක පාවිච්චි කරන්න <#{self.CMD_CH_ID}> channel එකට යන්න.")
+            return await ctx.send(f"❌ කරුණාකර මේ command එක <#{self.CMD_CH_ID}> channel එකේ පාවිච්චි කරන්න.")
 
         u_data = self.get_user(ctx.author.id)
         lvl = u_data["level"]
         xp = u_data["xp"]
         
-        next_xp = self.xp_table.get(lvl + 1, "MAX")
+        # ඊළඟ level එකට අවශ්‍ය ප්‍රමාණය සෙවීම
+        next_lvl = lvl + 1
+        needed = self.xp_table.get(next_lvl, "MAX")
         
-        embed = discord.Embed(title=f"📊 {ctx.author.name}'s Stats", color=discord.Color.purple())
-        embed.add_field(name="Level", value=f"⭐ {lvl}", inline=True)
-        embed.add_field(name="Total XP", value=f"✨ {xp}", inline=True)
-        embed.add_field(name="Next Level At", value=f"🎯 {next_xp} XP", inline=False)
+        embed = discord.Embed(title=f"📊 {ctx.author.name}'s Level Stats", color=0x3498db)
         embed.set_thumbnail(url=ctx.author.display_avatar.url)
+        embed.add_field(name="Current Level", value=f"⭐ Level {lvl}", inline=True)
+        embed.add_field(name="Total XP", value=f"✨ {xp} XP", inline=True)
+        embed.add_field(name="Next Level Requirement", value=f"🎯 {needed} XP", inline=False)
+        embed.set_footer(text="දිගටම Active වෙලා ඉන්න!")
         
         await ctx.send(embed=embed)
 
