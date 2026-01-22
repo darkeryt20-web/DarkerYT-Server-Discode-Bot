@@ -78,7 +78,7 @@ class Leveling(commands.Cog):
 
         # --- Add XP (10-20) ---
         u_data["xp"] += random.randint(10, 20)
-        u_data["cooldown"] = now + datetime.timedelta(seconds=30)
+        u_data["cooldown"] = now + datetime.timedelta(seconds=5)
 
         await self.check_level_up(message.author, message.channel)
 
