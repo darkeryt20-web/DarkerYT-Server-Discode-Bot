@@ -18,15 +18,15 @@ class Leveling(commands.Cog):
             41: 10555, 42: 11020, 43: 11495, 44: 11980, 45: 12475, 46: 12980, 47: 13495, 48: 14020, 49: 14555, 50: 268275
         }
 
+        # User data store: {user_id: {"xp": 0, "level": 0, "cooldown": timestamp}}
         self.users = {}
         self.voice_xp_loop.start()
 
     def get_user(self, uid):
         if uid not in self.users:
             self.users[uid] = {
-                "xp": 0, "level": 0, "last_msg": "", 
-                "spam_count": 0, "cooldown": datetime.datetime.min, 
-                "blocked_until": datetime.datetime.min
+                "xp": 0, "level": 0, 
+                "cooldown": datetime.datetime.min
             }
         return self.users[uid]
 
@@ -35,7 +35,7 @@ class Leveling(commands.Cog):
         current_xp = u_data["xp"]
         current_lvl = u_data["level"]
         
-        # ඊළඟ level එකට අවශ්‍ය XP තිබේදැයි බැලීම
+        # මීළඟ level එකට අවශ්‍ය XP තිබේදැයි බැලීම
         next_lvl = current_lvl + 1
         if next_lvl in self.xp_table and current_xp >= self.xp_table[next_lvl]:
             u_data["level"] = next_lvl
@@ -47,7 +47,7 @@ class Leveling(commands.Cog):
             )
             embed.set_thumbnail(url=member.display_avatar.url)
 
-            # 1. පණිවිඩය එවූ channel එකට
+            # 1. පණිවිඩය එවූ channel එකට (Voice නම් මෙය None විය හැක)
             if current_channel:
                 await current_channel.send(embed=embed)
             
@@ -64,35 +64,19 @@ class Leveling(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message):
+        # Bot සහ DM messages මඟ හැරීම
         if message.author.bot or not message.guild:
             return
 
         u_data = self.get_user(message.author.id)
         now = datetime.datetime.now()
 
-        # XP Block වී ඇත්දැයි බැලීම (Anti-spam penalty)
-        if now < u_data["blocked_until"]:
-            return
-
-        # --- Anti-Spam Logic ---
-        if message.content.lower() == u_data["last_msg"].lower() and len(message.content) > 1:
-            u_data["spam_count"] += 1
-            if u_data["spam_count"] >= 3:
-                u_data["blocked_until"] = now + datetime.timedelta(days=1)
-                await message.channel.send(f"⚠️ {message.author.mention}, ඔයා එකම පණිවිඩය කිහිපවරක් එවු නිසා ඔයාගේ XP පැය 24කට තහනම් කළා!")
-                return
-            else:
-                await message.channel.send(f"🚫 {message.author.mention}, කරුණාකර spam කරන්න එපා! (Warning {u_data['spam_count']}/3)")
-                return
-        else:
-            u_data["last_msg"] = message.content
-            u_data["spam_count"] = 0
-
-        # --- Cooldown (30s) ---
+        # --- Cooldown Check (30s) ---
+        # මෙය තත්පර 30කට වරක් පමණක් XP ලබාදීමටයි (Spam කරලා XP එකතු කිරීම වැළැක්වීමට)
         if now < u_data["cooldown"]:
             return
 
-        # --- Give XP (10-20) ---
+        # --- Add XP (10-20) ---
         u_data["xp"] += random.randint(10, 20)
         u_data["cooldown"] = now + datetime.timedelta(seconds=30)
 
@@ -103,19 +87,17 @@ class Leveling(commands.Cog):
         """විනාඩියකට වරක් Voice XP ලබාදීම (Mic On/Off අදාළ නොවේ)"""
         for guild in self.bot.guilds:
             for vc in guild.voice_channels:
-                if len(vc.members) < 1: continue # කවුරුත් නැත්නම් skip කරන්න
+                if len(vc.members) < 1: continue 
                 
                 for member in vc.members:
                     if member.bot: continue
                     
                     u_data = self.get_user(member.id)
-                    if datetime.datetime.now() < u_data["blocked_until"]:
-                        continue
                     
-                    # මයික් එක ඕෆ් වුණත් දැන් XP ලැබෙනවා
+                    # Voice XP (5-15 random)
                     u_data["xp"] += random.randint(5, 15)
                     
-                    # Voice වලදී level up වුණොත් log channel එකට පමණක් දමමු
+                    # Level up වුණොත් log එකට පණිවිඩයක් යවන්න
                     await self.check_level_up(member, None)
 
     @commands.command(name="level")
@@ -137,7 +119,7 @@ class Leveling(commands.Cog):
         embed.add_field(name="Current Level", value=f"⭐ Level {lvl}", inline=True)
         embed.add_field(name="Total XP", value=f"✨ {xp} XP", inline=True)
         embed.add_field(name="Next Level Requirement", value=f"🎯 {needed} XP", inline=False)
-        embed.set_footer(text="දිගටම Active වෙලා ඉන්න!")
+        embed.set_footer(text="Keep active to level up faster!")
         
         await ctx.send(embed=embed)
 
