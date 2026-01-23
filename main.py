@@ -11,7 +11,7 @@ GOODBYE_CH_ID = 1463584100966465596
 
 # --- Bot Setup ---
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix='!', intents=intents)
+bot = commands.Bot(command_prefix='.', intents=intents)
 
 @bot.event
 async def on_ready():
@@ -107,3 +107,4 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         pass
+
