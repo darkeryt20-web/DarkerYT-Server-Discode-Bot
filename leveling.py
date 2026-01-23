@@ -1,17 +1,19 @@
 import discord
 from discord.ext import commands, tasks
+from easy_pil import Editor, load_image_async, Font, Canvas
 import random
 import datetime
+import io
 
 class Leveling(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.LOG_CH_ID = 1463876659320062086    # Level Up පණිවිඩ යන Channel එක
-        self.CMD_CH_ID = 1463878264522014915    # Leaderboards වැඩ කරන Channel එක
+        self.LOG_CH_ID = 1463876659320062086
+        self.CMD_CH_ID = 1463878264522014915
         
-        # User Database: {user_id: {"xp": 0, "messages": 0, "voice_mins": 0, "cooldown": timestamp}}
+        # User Database
         self.users = {}
-        self.footer_text = "\n\n**💡 Commands:** `.level` | `.leaderboard` | `.voicetime` | `.message leaderboard`"
+        self.footer_text = "💡 Commands: .level | .leaderboard | .voicetime | .message leaderboard"
         
         self.voice_xp_loop.start()
 
@@ -21,65 +23,82 @@ class Leveling(commands.Cog):
         return self.users[uid]
 
     def get_rank_info(self, xp):
-        """XP මත පදනම්ව Rank එක සහ Level එක ගණනය කිරීම"""
+        # Rank Name, Base XP, Step per Level
         ranks = [
-            ("🟤 Bronze", 0, 45000), ("⚪ Silver", 225000, 45000), 
-            ("⚫ Obsidian", 450000, 60000), ("🟡 Gold", 750000, 70000),
-            ("🔵 Platinum", 1100000, 70000), ("💎 Diamond", 1450000, 70000),
-            ("🔥 Master", 1800000, 60000), ("👑 Grandmaster", 2100000, 40000),
-            ("⚡ Challenger", 2300000, 25000)
+            ("BRONZE", 0, 45000), ("SILVER", 225000, 45000), 
+            ("OBSIDIAN", 450000, 60000), ("GOLD", 750000, 70000),
+            ("PLATINUM", 1100000, 70000), ("DIAMOND", 1450000, 70000),
+            ("MASTER", 1800000, 60000), ("GRANDMASTER", 2100000, 40000),
+            ("CHALLENGER", 2300000, 25000)
         ]
         
-        # Challenger Ascension (Post 2.4M)
         if xp >= 2400000:
-            extra_xp = xp - 2400000
-            asc_level = int(extra_xp // 100000) + 1
-            return "⚡ Challenger (Ascension)", min(asc_level, 16)
+            extra = xp - 2400000
+            asc_lvl = int(extra // 100000) + 1
+            return "CHALLENGER ASC.", min(asc_lvl, 16), 2400000 + (asc_lvl * 100000)
 
-        current_rank = "🟤 Bronze"
-        current_level = 1
-
-        for name, base_xp, step in ranks:
-            if xp >= base_xp:
+        current_rank, current_lvl, next_xp = "BRONZE", 1, 45000
+        for name, base, step in ranks:
+            if xp >= base:
                 current_rank = name
-                diff = xp - base_xp
-                current_level = int(diff // step) + 1
-                if current_level > 5: current_level = 5
-            else:
-                break
-        return current_rank, current_level
+                diff = xp - base
+                current_lvl = int(diff // step) + 1
+                if current_lvl > 5: current_lvl = 5
+                next_xp = base + (current_lvl * step)
+            else: break
+        return current_rank, current_lvl, next_xp
+
+    async def create_rank_card(self, member, xp, messages, voice):
+        rank_name, level, next_xp_req = self.get_rank_info(xp)
+        
+        # Background නිර්මාණය
+        background = Editor(Canvas((900, 250), color="#1e1e1e"))
+        avatar_img = await load_image_async(member.display_avatar.url)
+        avatar = Editor(avatar_img).resize((150, 150)).circle_image()
+        
+        background.paste(avatar, (40, 50))
+        
+        font_big = Font.poppins(size=40, variant="bold")
+        font_small = Font.poppins(size=25, variant="light")
+        font_mid = Font.poppins(size=30, variant="regular")
+
+        # විස්තර ඇතුළත් කිරීම
+        background.text((220, 50), str(member.name), color="white", font=font_big)
+        background.text((220, 100), f"RANK: {rank_name} | LVL: {level}", color="#ffcc00", font=font_mid)
+        background.text((220, 150), f"XP: {xp:,} / {next_xp_req:,}", color="#aaaaaa", font=font_small)
+        background.text((220, 190), f"MSGS: {messages} | VOICE: {voice}m", color="#aaaaaa", font=font_small)
+
+        # Progress Bar
+        percentage = min(int((xp / next_xp_req) * 100), 100) if next_xp_req > 0 else 100
+        background.bar((220, 220), max_width=600, height=20, percentage=percentage, fill="#ffcc00", back_color="#444444")
+
+        file = discord.File(fp=background.image_bytes, filename="rank.png")
+        return file
 
     async def check_level_up(self, member, old_xp, new_xp, channel=None):
-        old_rank, old_lvl = self.get_rank_info(old_xp)
-        new_rank, new_lvl = self.get_rank_info(new_xp)
+        old_r, old_l, _ = self.get_rank_info(old_xp)
+        new_r, new_l, _ = self.get_rank_info(new_xp)
 
-        if (new_rank != old_rank) or (new_lvl > old_lvl):
-            embed = discord.Embed(
-                title="🎊 LEVEL UP / RANK UP!",
-                description=f"සුභ පැතුම් {member.mention}!\n\n**Rank:** {new_rank}\n**Level:** {new_lvl}",
-                color=0x00ff00
-            )
-            embed.set_thumbnail(url=member.display_avatar.url)
+        if (new_r != old_r) or (new_l > old_l):
+            card = await self.create_rank_card(member, new_xp, self.users[member.id]["messages"], self.users[member.id]["voice_mins"])
+            msg = f"🎊 {member.mention} Upgraded to **{new_r} Level {new_l}**!"
             
-            # පණිවිඩ යැවීම
-            if channel: await channel.send(embed=embed)
+            if channel: await channel.send(content=msg, file=card)
             log_ch = self.bot.get_channel(self.LOG_CH_ID)
-            if log_ch: await log_ch.send(f"📈 **{member.name}** reached **{new_rank} - Level {new_lvl}**")
-            try: await member.send(f"නියමයි! ඔයා {member.guild.name} හි {new_rank} Level {new_lvl} වුණා! {self.footer_text}")
+            if log_ch: await log_ch.send(f"📈 **{member.name}** -> {new_r} Lvl {new_l}")
+            try: await member.send(content=f"You leveled up in {member.guild.name}!", file=card)
             except: pass
 
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.author.bot or not message.guild: return
-        
         u_data = self.get_user(message.author.id)
         u_data["messages"] += 1
         
         now = datetime.datetime.now()
         if now > u_data["cooldown"]:
             old_xp = u_data["xp"]
-            xp_gain = random.randint(10, 20)
-            u_data["xp"] += xp_gain
+            u_data["xp"] += random.randint(10, 20)
             u_data["cooldown"] = now + datetime.timedelta(seconds=30)
             await self.check_level_up(message.author, old_xp, u_data["xp"], message.channel)
 
@@ -87,15 +106,13 @@ class Leveling(commands.Cog):
     async def voice_xp_loop(self):
         for guild in self.bot.guilds:
             for vc in guild.voice_channels:
-                for member in vc.members:
-                    if member.bot: continue
-                    u_data = self.get_user(member.id)
-                    u_data["voice_mins"] += 1
-                    old_xp = u_data["xp"]
-                    u_data["xp"] += random.randint(5, 15)
-                    await self.check_level_up(member, old_xp, u_data["xp"])
-
-    # --- Commands Section ---
+                for m in vc.members:
+                    if m.bot: continue
+                    u = self.get_user(m.id)
+                    u["voice_mins"] += 1
+                    old_xp = u["xp"]
+                    u["xp"] += random.randint(5, 15)
+                    await self.check_level_up(m, old_xp, u["xp"])
 
     @commands.command(name="level")
     async def level_cmd(self, ctx, sub: str = None):
@@ -103,59 +120,37 @@ class Leveling(commands.Cog):
         
         if sub == "leaderboard":
             sorted_users = sorted(self.users.items(), key=lambda x: x[1]['xp'], reverse=True)
-            top_member_id, top_data = sorted_users[0]
-            top_user = self.bot.get_user(top_member_id)
-            rank, lvl = self.get_rank_info(top_data['xp'])
-            
-            embed = discord.Embed(title="🏆 Level Leaderboard - #1 Member", color=0xffd700)
-            embed.description = f"**Name:** {top_user.name if top_user else 'Unknown'}\n**Rank:** {rank}\n**Level:** {lvl}\n**Total XP:** {top_data['xp']:,}"
-            await ctx.send(content=self.footer_text, embed=embed)
+            top_id, top_data = sorted_users[0]
+            top_user = await self.bot.fetch_user(top_id)
+            card = await self.create_rank_card(top_user, top_data['xp'], top_data['messages'], top_data['voice_mins'])
+            await ctx.send(content=f"🏆 **#1 Member Leaderboard**\n{self.footer_text}", file=card)
         else:
-            u_data = self.get_user(ctx.author.id)
-            rank, lvl = self.get_rank_info(u_data['xp'])
-            embed = discord.Embed(title=f"📊 {ctx.author.name}'s Rank", color=0x3498db)
-            embed.add_field(name="Current Rank", value=rank, inline=True)
-            embed.add_field(name="Level", value=lvl, inline=True)
-            embed.add_field(name="Total XP", value=f"{u_data['xp']:,}", inline=False)
-            await ctx.send(content=self.footer_text, embed=embed)
+            u = self.get_user(ctx.author.id)
+            card = await self.create_rank_card(ctx.author, u['xp'], u['messages'], u['voice_mins'])
+            await ctx.send(content=self.footer_text, file=card)
 
     @commands.command(name="voicetime")
     async def voice_cmd(self, ctx, sub: str = None):
         if ctx.channel.id != self.CMD_CH_ID: return
-        
+        u = self.get_user(ctx.author.id)
         if sub == "leaderboard":
             sorted_v = sorted(self.users.items(), key=lambda x: x[1]['voice_mins'], reverse=True)[:10]
-            desc = ""
-            for i, (uid, data) in enumerate(sorted_v, 1):
-                user = self.bot.get_user(uid)
-                desc += f"**{i}.** {user.name if user else uid} - `{data['voice_mins']} mins`\n"
-            embed = discord.Embed(title="🎙️ Top 10 Voice Time", description=desc, color=0x1abc9c)
-            await ctx.send(content=self.footer_text, embed=embed)
+            res = "\n".join([f"**{i+1}.** <@{uid}> - `{d['voice_mins']}m`" for i, (uid, d) in enumerate(sorted_v)])
+            await ctx.send(embed=discord.Embed(title="🎙️ Voice Leaderboard", description=res + f"\n\n{self.footer_text}"))
         else:
-            u_data = self.get_user(ctx.author.id)
-            await ctx.send(f"🎙️ {ctx.author.mention}, ඔයාගේ මුළු Voice කාලය: **{u_data['voice_mins']} minutes.** {self.footer_text}")
+            await ctx.send(f"🎙️ {ctx.author.mention}, Total Voice Time: **{u['voice_mins']}m**\n{self.footer_text}")
 
     @commands.command(name="message")
-    async def msg_leaderboard(self, ctx, sub: str = None):
+    async def msg_cmd(self, ctx, sub: str = None):
         if ctx.channel.id != self.CMD_CH_ID or sub != "leaderboard": return
-        
         sorted_m = sorted(self.users.items(), key=lambda x: x[1]['messages'], reverse=True)[:10]
-        desc = ""
-        for i, (uid, data) in enumerate(sorted_m, 1):
-            user = self.bot.get_user(uid)
-            desc += f"**{i}.** {user.name if user else uid} - `{data['messages']} messages`\n"
-        embed = discord.Embed(title="💬 Top 10 Message Count", description=desc, color=0xe67e22)
-        await ctx.send(content=self.footer_text, embed=embed)
+        res = "\n".join([f"**{i+1}.** <@{uid}> - `{d['messages']} msgs`" for i, (uid, d) in enumerate(sorted_m)])
+        await ctx.send(embed=discord.Embed(title="💬 Message Leaderboard", description=res + f"\n\n{self.footer_text}"))
 
     @commands.command(name="leaderboard")
-    async def all_leaderboards(self, ctx):
+    async def lb_all(self, ctx):
         if ctx.channel.id != self.CMD_CH_ID: return
-        
-        embed = discord.Embed(title="🌟 All Leaderboards Preview", color=0x9b59b6)
-        embed.add_field(name="Level", value=f"`.level leaderboard`", inline=True)
-        embed.add_field(name="Messages", value=f"`.message leaderboard`", inline=True)
-        embed.add_field(name="Voice", value=f"`.voicetime leaderboard`", inline=True)
-        await ctx.send(content=self.footer_text, embed=embed)
+        await ctx.send(f"🌟 **Available Leaderboards:**\n`.level leaderboard` | `.message leaderboard` | `.voicetime leaderboard` \n\n{self.footer_text}")
 
 async def setup(bot):
     await bot.add_cog(Leveling(bot))
