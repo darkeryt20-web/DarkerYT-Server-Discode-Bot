@@ -2,3 +2,5 @@ discord.py
 easy-pil
 Pillow
 flask
+yt-dlp
+PyNaCl
