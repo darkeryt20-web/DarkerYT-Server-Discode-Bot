@@ -5,7 +5,7 @@ import os
 import asyncio
 
 # --- 1. Configuration ---
-# ඔයාගේ Discord Bot Token එක මෙතන දාන්න (හෝ Environment Variable එකක් ලෙස තබන්න)
+# Koyeb Environment Variables වල DISCORD_TOKEN එක අනිවාර්යයෙන් ඇතුළත් කරන්න
 TOKEN = os.getenv('DISCORD_TOKEN') 
 WELCOME_CH_ID = 1463499215954247711
 GOODBYE_CH_ID = 1463584100966465596
@@ -28,16 +28,16 @@ async def on_ready():
 
 # --- 3. Welcome Card Logic ---
 async def create_welcome_card(member):
-    # Background රූපය (ඔයාට කැමති එකක් මෙතනට දාන්න පුළුවන්)
+    # Background රූපය
     bg_url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcShzQjsqgvoYier1vQBAMnUWlbr5zq9LC6lFg&s"
     
     try:
-        # රූප සැකසීම
+        # රූප සැකසීම (easy-pil භාවිතයෙන්)
         background = Editor(await load_image_async(bg_url)).resize((800, 450))
         avatar_img = await load_image_async(member.display_avatar.url)
         avatar = Editor(avatar_img).resize((180, 180)).circle_image()
         
-        # Avatar එක මැදට ගැනීම
+        # Avatar එක මැදට ගැනීම සහ Outline එක ඇඳීම
         background.ellipse(position=(310, 90), width=180, height=180, outline="white", stroke_width=5)
         background.paste(avatar, (310, 90))
         
@@ -54,7 +54,7 @@ async def create_welcome_card(member):
         print(f"⚠️ Welcome Card Error: {e}")
         return None
 
-# --- 4. Events ---
+# --- 4. Events (Join/Leave) ---
 @bot.event
 async def on_member_join(member):
     channel = bot.get_channel(WELCOME_CH_ID)
@@ -80,10 +80,10 @@ async def on_member_remove(member):
         )
         await channel.send(embed=embed)
 
-# --- 5. Extensions Loading (Leveling & Music) ---
+# --- 5. Extensions Loading ---
 async def load_extensions():
-    # 'leveling.py' සහ 'music.py' යන file දෙකම එකම folder එකේ තිබිය යුතුයි
-    initial_extensions = ["leveling", "music"]
+    # GitHub එකේ මේ files 3ම තිබිය යුතුයි: leveling.py, music.py, movies.py
+    initial_extensions = ["leveling", "music", "movies"]
     
     for extension in initial_extensions:
         try:
@@ -92,7 +92,7 @@ async def load_extensions():
         except Exception as e:
             print(f"❌ Failed to load extension {extension}: {e}")
 
-# --- 6. Execution ---
+# --- 6. Main Execution ---
 async def main():
     async with bot:
         await load_extensions()
