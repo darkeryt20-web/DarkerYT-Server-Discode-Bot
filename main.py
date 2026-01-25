@@ -5,7 +5,7 @@ import asyncio
 
 # --- Configuration ---
 TOKEN = os.getenv('DISCORD_TOKEN')
-LOG_CHANNEL_ID = 1464920331461328958 # Bot Logs Channel
+LOG_CHANNEL_ID = 1464920331461328958 
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix='.', intents=intents)
@@ -13,20 +13,17 @@ bot = commands.Bot(command_prefix='.', intents=intents)
 @bot.event
 async def on_ready():
     print(f'✅ {bot.user} is online and ready!')
-    
-    # Sync Slash Commands
     try:
         await bot.tree.sync()
-        print("🚀 Slash commands synced successfully.")
+        print("🚀 Slash commands synced.")
     except Exception as e:
         print(f"❌ Sync error: {e}")
 
-    # Send Online Embed to Discord
     channel = bot.get_channel(LOG_CHANNEL_ID)
     if channel:
         embed = discord.Embed(
             title="🤖 Bot Status: Online",
-            description=f"**{bot.user.name}** is now active!\nAll systems are operational.",
+            description=f"**{bot.user.name}** has been successfully started!\nAll extensions are operational.",
             color=discord.Color.green()
         )
         await channel.send(embed=embed)
