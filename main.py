@@ -3,37 +3,41 @@ from discord.ext import commands
 from easy_pil import Editor, load_image_async, Font
 import os
 import asyncio
-import google.generativeai as genai  # AI සඳහා
+import google.generativeai as genai
 
-# --- 1. Configuration ---
+# --- 1. Configuration (Environment Variables) ---
 TOKEN = os.getenv('DISCORD_TOKEN') 
-GEMINI_KEY = os.getenv('GEMINI_API_KEY') # API Key එක මෙතනට
+GEMINI_KEY = os.getenv('GEMINI_API_KEY') 
 WELCOME_CH_ID = 1463499215954247711
 GOODBYE_CH_ID = 1463584100966465596
 
-# AI Configuration
+# --- 2. AI Chatbot Setup (Google Gemini) ---
 genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash') # වේගවත් මාදිලිය
+# මෙතනින් තමයි AI එකේ ස්වභාවය තීරණය කරන්නේ (System Instruction)
+model = genai.GenerativeModel(
+    model_name='gemini-1.5-flash',
+    system_instruction="ඔබේ නම SXD Bot. ඔබ ශ්‍රී ලංකාවේ Discord සර්වර් එකක සහයෝගීව වැඩ කරන මිත්‍රශීලී බොට් කෙනෙකි. සිංහල සහ ඉංග්‍රීසි භාෂා දෙකෙන්ම ඉතා කෙටියෙන් සහ පැහැදිලිව පිළිතුරු දෙන්න."
+)
 
-# --- 2. Bot Setup ---
+# --- 3. Bot Setup ---
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix='.', intents=intents)
 
 @bot.event
 async def on_ready():
     print(f'✅ Bot is online: {bot.user}')
+    # Slash Commands Sync කිරීම
     try:
-        await bot.tree.sync()
-        print(f"🚀 Slash commands synced.")
+        synced = await bot.tree.sync()
+        print(f"🚀 Synced {len(synced)} slash commands.")
     except Exception as e:
         print(f"❌ Sync Error: {e}")
 
-# --- 3. AI Chat Logic ---
+# --- 4. AI Chat Event (Mention logic) ---
 @bot.event
 async def on_message(message):
-    # බොට්ව Mention කරලා තියෙනවා නම් සහ message එක එව්වේ Bot කෙනෙක් නෙවෙයි නම්
+    # බොට්ව Mention කළොත් පමණක් AI එක ක්‍රියාත්මක වේ
     if bot.user.mentioned_in(message) and not message.author.bot:
-        # User ගේ ප්‍රශ්නයෙන් mention එක අයින් කිරීම
         user_input = message.content.replace(f'<@{bot.user.id}>', '').strip()
         
         if not user_input:
@@ -42,37 +46,41 @@ async def on_message(message):
 
         async with message.channel.typing():
             try:
-                # AI උත්තරය ලබා ගැනීම
                 response = model.generate_content(user_input)
-                await message.reply(response.text)
+                # 2000 සීමාව ඉක්මවා ඇත්නම් කපා හැරීම
+                reply_text = response.text if len(response.text) < 2000 else response.text[:1990] + "..."
+                await message.reply(reply_text)
             except Exception as e:
                 print(f"❌ AI Error: {e}")
-                await message.reply("සොරි මචං, මගේ AI සිස්ටම් එකේ පොඩි අවුලක් ආවා.")
+                await message.reply("සොරි මචං, පොඩි error එකක් ආවා. පස්සේ ට්‍රයි කරමුද?")
 
-    # Commands වැඩ කිරීමට මෙය අනිවාර්යයි
+    # වෙනත් commands වැඩ කිරීමට මෙය අනිවාර්යයි
     await bot.process_commands(message)
 
-# --- 4. Welcome Card Logic ---
+# --- 5. Welcome Card Image Creation ---
 async def create_welcome_card(member):
     bg_url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcShzQjsqgvoYier1vQBAMnUWlbr5zq9LC6lFg&s"
     try:
         background = Editor(await load_image_async(bg_url)).resize((800, 450))
         avatar_img = await load_image_async(member.display_avatar.url)
         avatar = Editor(avatar_img).resize((180, 180)).circle_image()
+        
         background.ellipse(position=(310, 90), width=180, height=180, outline="white", stroke_width=5)
         background.paste(avatar, (310, 90))
         
         font_name = Font.poppins(size=50, variant="bold")
         font_sub = Font.poppins(size=30, variant="light")
+
         background.text((400, 300), f"{member.name}", color="#ffffff", font=font_name, align="center")
         background.text((400, 360), "WELCOME TO THE SERVER", color="#ffcc00", font=font_sub, align="center")
         background.text((400, 400), f"Member #{member.guild.member_count}", color="#aaaaaa", font=font_sub, align="center")
+        
         return discord.File(fp=background.image_bytes, filename="welcome.png")
     except Exception as e:
         print(f"⚠️ Welcome Card Error: {e}")
         return None
 
-# --- 5. Member Events ---
+# --- 6. Member Events ---
 @bot.event
 async def on_member_join(member):
     channel = bot.get_channel(WELCOME_CH_ID)
@@ -88,17 +96,16 @@ async def on_member_remove(member):
     if channel:
         await channel.send(f"👋 **{member.name}** left the server.")
 
-# --- 6. Extensions Loading ---
+# --- 7. Loading Extensions ---
 async def load_extensions():
-    # 'leveling' සහ 'music' පමණක් load කරයි
     for extension in ["leveling", "music"]:
         try:
             await bot.load_extension(extension)
             print(f"✅ Extension Loaded: {extension}")
         except Exception as e:
-            print(f"❌ Failed to load {extension}: {e}")
+            print(f"❌ Load Error {extension}: {e}")
 
-# --- 7. Run Bot ---
+# --- 8. Start Bot ---
 async def main():
     async with bot:
         await load_extensions()
