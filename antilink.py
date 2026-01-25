@@ -6,7 +6,7 @@ class AntiLink(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         # --- CONFIGURATION ---
-        self.LINK_ALLOW_CH = 1463842679648682078  # Link දාන්න පුළුවන් Channel එක
+        self.LINK_ALLOW_CH = 1463842297853771806  # Link දාන්න පුළුවන් Channel එක
         self.WARN_CHANNEL = 1464965728309477565   # Warning යන්න ඕන Channel එක
 
     @commands.Cog.listener()
