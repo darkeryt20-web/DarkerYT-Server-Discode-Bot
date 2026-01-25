@@ -3,3 +3,4 @@ easy-pil
 Pillow
 yt-dlp
 PyNaCl
+google-generativeai
