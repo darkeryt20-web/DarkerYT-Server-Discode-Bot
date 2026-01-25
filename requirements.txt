@@ -1,6 +1,5 @@
 discord.py
 easy-pil
 Pillow
-google-genai
 yt-dlp
 PyNaCl
