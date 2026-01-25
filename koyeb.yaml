@@ -1,0 +1,15 @@
+version: "1.0"
+services:
+  - name: my-discord-bot
+    type: worker
+    image: python:3.11
+    # මෙතනින් තමයි FFmpeg ඉන්ස්ටෝල් කරන්නේ
+    build:
+      command: |
+        apt-get update && apt-get install -y ffmpeg
+        pip install -r requirements.txt
+    run:
+      command: python main.py
+    env:
+      - key: DISCORD_TOKEN
+        value: "ඔයාගේ_බොට්_ටෝකන්_එක_මෙතනට_දාන්න"
