@@ -1,6 +1,6 @@
 discord.py
 easy-pil
 Pillow
+google-generativeai
 yt-dlp
 PyNaCl
-google-generativeai
