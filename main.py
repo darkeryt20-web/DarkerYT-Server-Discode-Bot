@@ -4,7 +4,7 @@ import os
 import asyncio
 
 # --- Configuration ---
-TOKEN = os.getenv('DISCORD_TOKEN')
+TOKEN = os.getenv('MTQ2MzUxNDE1OTkzNjQ0MjQ2MQ.GySjSf.gY-blUxLJHQmN3fk-iCL0Jne5uqnJ-wHw2AOK4')
 LOG_CHANNEL_ID = 1464920331461328958 
 
 # Setup Intents (All intents are required for Leveling/Welcome/Anti-link)
@@ -55,3 +55,4 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("🔴 Bot is shutting down...")
+
