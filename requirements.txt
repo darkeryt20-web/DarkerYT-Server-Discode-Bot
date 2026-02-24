@@ -2,4 +2,3 @@ discord.py
 flask
 yt-dlp
 PyNaCl
-python-dotenv
