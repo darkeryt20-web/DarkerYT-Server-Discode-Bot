@@ -1,54 +1,61 @@
 import discord
-from discord.ext import commands
 import os
-import asyncio
+import threading
+from discord.ext import commands
 from flask import Flask
-from threading import Thread
+from dotenv import load_dotenv
 
-# --- 1. KOYEB HEALTH CHECK (FLASK) ---
+load_dotenv()
+
+# --- Flask Server for Koyeb Health Checks ---
 app = Flask('')
-@app.route('/')
-def home(): return "I am alive!"
 
-def run_web_server():
+@app.route('/')
+def home():
+    return "Bot is alive!", 200
+
+def run_flask():
     app.run(host='0.0.0.0', port=8000)
 
-# --- 2. CONFIGURATION ---
-# Koyeb Environment Variables වල 'DISCORD_TOKEN' කියලා නම දීලා ටෝකන් එක දාන්න
-TOKEN = os.getenv('DISCORD_TOKEN') 
-LOG_CHANNEL_ID = 1464920331461328958 
+# --- Bot Configuration ---
+class MyBot(commands.Bot):
+    def __init__(self):
+        intents = discord.Intents.all()
+        super().__init__(command_prefix="!", intents=intents)
 
-intents = discord.Intents.all()
-bot = commands.Bot(command_prefix='.', intents=intents)
+    async def setup_hook(self):
+        # List of Cogs to load (We will create these files next)
+        initial_extensions = [
+            'cogs.verification',
+            'cogs.leveling',
+            'cogs.music',
+            'cogs.stats',
+            'cogs.security',
+            'cogs.welcome',
+            'cogs.monitor'
+        ]
+        
+        for ext in initial_extensions:
+            try:
+                await self.load_extension(ext)
+                print(f"Successfully loaded {ext}")
+            except Exception as e:
+                print(f"Failed to load {ext}: {e}")
+
+bot = MyBot()
 
 @bot.event
 async def on_ready():
-    print(f'✅ {bot.user} is online!')
-    try:
-        await bot.tree.sync()
-    except Exception as e:
-        print(f"❌ Sync error: {e}")
-
-async def load_extensions():
-    # මේ extensions (level.py, music.py, etc.) ඔයාගේ GitHub එකේ තිබිය යුතුයි
-    extensions = ["level", "music", "welcome", "leave", "antilink"]
-    for ext in extensions:
-        try:
-            await bot.load_extension(ext)
-            print(f"✅ Loaded: {ext}")
-        except Exception as e:
-            print(f"❌ Error loading {ext}: {e}")
-
-async def main():
-    # Web server එක background එකේ පටන් ගන්නවා
-    Thread(target=run_web_server).start()
-    
-    async with bot:
-        await load_extensions()
-        if TOKEN:
-            await bot.start(TOKEN)
-        else:
-            print("❌ Token Not Found! Koyeb Environment Variables වල 'DISCORD_TOKEN' දාන්න.")
+    print(f'Logged in as {bot.user} (ID: {bot.user.id})')
+    print('------')
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Start Flask in a separate thread
+    threading.Thread(target=run_flask, daemon=True).start()
+    
+    # Run the Bot
+    token = os.getenv('DISCORD_TOKEN')
+    if token:
+        bot.run(token)
+    else:
+        print("Error: No DISCORD_TOKEN found in environment variables.")
