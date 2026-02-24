@@ -2,57 +2,53 @@ import discord
 from discord.ext import commands
 import os
 import asyncio
+from flask import Flask
+from threading import Thread
 
-# --- Configuration ---
-TOKEN = os.getenv('MTQ2MzUxNDE1OTkzNjQ0MjQ2MQ.GySjSf.gY-blUxLJHQmN3fk-iCL0Jne5uqnJ-wHw2AOK4')
+# --- 1. KOYEB HEALTH CHECK (FLASK) ---
+app = Flask('')
+@app.route('/')
+def home(): return "I am alive!"
+
+def run_web_server():
+    app.run(host='0.0.0.0', port=8000)
+
+# --- 2. CONFIGURATION ---
+# Koyeb Environment Variables වල 'DISCORD_TOKEN' කියලා නම දීලා ටෝකන් එක දාන්න
+TOKEN = os.getenv('DISCORD_TOKEN') 
 LOG_CHANNEL_ID = 1464920331461328958 
 
-# Setup Intents (All intents are required for Leveling/Welcome/Anti-link)
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix='.', intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f'✅ {bot.user} is online and ready!')
-    
-    # Sync Slash Commands for Music and other interactions
+    print(f'✅ {bot.user} is online!')
     try:
         await bot.tree.sync()
-        print("🚀 Slash commands synced successfully.")
     except Exception as e:
         print(f"❌ Sync error: {e}")
 
-    # Send Startup Message to Bot Logs Channel
-    channel = bot.get_channel(LOG_CHANNEL_ID)
-    if channel:
-        embed = discord.Embed(
-            title="🤖 Bot Status: Online",
-            description=f"**{bot.user.name}** has been successfully started!\nAll extensions are now operational.",
-            color=discord.Color.green()
-        )
-        embed.set_footer(text="System Healthy")
-        await channel.send(embed=embed)
-
 async def load_extensions():
-    # Adding 'antilink' to the extensions list as requested
+    # මේ extensions (level.py, music.py, etc.) ඔයාගේ GitHub එකේ තිබිය යුතුයි
     extensions = ["level", "music", "welcome", "leave", "antilink"]
-    
     for ext in extensions:
         try:
             await bot.load_extension(ext)
-            print(f"✅ Extension Loaded: {ext}")
+            print(f"✅ Loaded: {ext}")
         except Exception as e:
             print(f"❌ Error loading {ext}: {e}")
 
 async def main():
+    # Web server එක background එකේ පටන් ගන්නවා
+    Thread(target=run_web_server).start()
+    
     async with bot:
-        # Load all cog files before starting the bot
         await load_extensions()
-        await bot.start(TOKEN)
+        if TOKEN:
+            await bot.start(TOKEN)
+        else:
+            print("❌ Token Not Found! Koyeb Environment Variables වල 'DISCORD_TOKEN' දාන්න.")
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("🔴 Bot is shutting down...")
-
+    asyncio.run(main())
