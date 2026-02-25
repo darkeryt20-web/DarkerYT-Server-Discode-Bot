@@ -19,8 +19,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Expose ports for both Flask health checks
+# ... (rest of Dockerfile remains the same) ...
+
+# Expose all three health check ports
 EXPOSE 8000
 EXPOSE 8001
+EXPOSE 8002
 
-# Start Bot 1 in the background and Bot 2 in the foreground
-CMD python main.py & python verify.py
+# Run all three scripts in the background/foreground
+CMD python main.py & python verify.py & python welcome.py
