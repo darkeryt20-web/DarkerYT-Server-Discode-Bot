@@ -8,7 +8,7 @@ from datetime import datetime
 
 # --- Health Check ---
 app = Flask(__name__)
-@app.route('/')
+@app.route('.')
 def health(): return "OK", 200
 
 def run_web(): app.run(host='0.0.0.0', port=8000)
@@ -77,3 +77,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
