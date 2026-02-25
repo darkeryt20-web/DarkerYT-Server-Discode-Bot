@@ -31,7 +31,7 @@ class HighPerformanceBot(commands.Bot):
                         print(f"❌ Failed to load Cog {filename}: {e}")
         
         # 2. 'welcome.py' eka main folder eke thibbath eka load kireema
-        if os.path.exists('./welcome.py'):
+        if os.path.exists('welcome.py'):
             try:
                 await self.load_extension('welcome')
                 print("✅ Loaded welcome.py from Root")
@@ -77,4 +77,5 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
