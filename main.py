@@ -1,38 +1,38 @@
 import discord
 from discord.ext import commands
+from datetime import datetime
 
-class Welcome(commands.Cog):
+class Status(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.welcome_channel_id = 1474041097498923079
-        self.goodbye_channel_id = 1474041189501243558
+        self.log_channel_id = 1474051484390789253
 
     @commands.Cog.listener()
-    async def on_member_join(self, member):
-        channel = self.bot.get_channel(self.welcome_channel_id)
-        if channel:
-            embed = discord.Embed(
-                title="👋 Welcome to the Server!",
-                description=f"Welcome {member.mention}! we're glad to have you here.",
-                color=discord.Color.blue()
-            )
-            embed.set_thumbnail(url=member.display_avatar.url)
-            embed.add_field(name="Account Created", value=member.created_at.strftime("%b %d, %Y"), inline=True)
-            embed.set_footer(text=f"Member #{member.guild.member_count}")
-            await channel.send(embed=embed)
+    async def on_ready(self):
+        # Set a professional Activity status
+        await self.bot.change_presence(
+            activity=discord.Activity(
+                type=discord.ActivityType.watching, 
+                name="System Integrity"
+            ),
+            status=discord.Status.online
+        )
 
-    @commands.Cog.listener()
-    async def on_member_remove(self, member):
-        channel = self.bot.get_channel(self.goodbye_channel_id)
+        # Send the Startup Notification
+        channel = self.bot.get_channel(self.log_channel_id)
         if channel:
             embed = discord.Embed(
-                title="😢 Goodbye",
-                description=f"{member.display_name} has left the server. We'll miss you!",
-                color=discord.Color.red()
+                title="✅ System Operational",
+                description="The bot has successfully established a connection.",
+                color=discord.Color.green(),
+                timestamp=datetime.utcnow()
             )
-            embed.set_thumbnail(url=member.display_avatar.url)
-            embed.set_footer(text=f"Current Members: {member.guild.member_count}")
+            embed.add_field(name="Latency", value=f"{round(self.bot.latency * 1000)}ms", inline=True)
+            embed.add_field(name="Environment", value="Koyeb Cloud", inline=True)
+            embed.set_footer(text="Modular System v1.0")
+            
             await channel.send(embed=embed)
+            print(f"Startup notification sent to {self.log_channel_id}")
 
 async def setup(bot):
-    await bot.add_cog(Welcome(bot))
+    await bot.add_cog(Status(bot))
