@@ -4,67 +4,107 @@ import os
 import threading
 import asyncio
 from flask import Flask
-from datetime import datetime
+from datetime import datetime, timedelta
 
-# --- Health Check ---
+# --- Health Check Server ---
 app = Flask(__name__)
-@app.route('/')
-def health(): return "OK", 200
 
-def run_web(): app.run(host='0.0.0.0', port=8000)
+@app.route('/')
+def health(): 
+    return "Bot is Live!", 200
+
+def run_web(): 
+    # Suppress flask logging for a cleaner console
+    import logging
+    log = logging.getLogger('werkzeug')
+    log.setLevel(logging.ERROR)
+    app.run(host='0.0.0.0', port=8000)
 
 # --- Bot Logic ---
 class HighPerformanceBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.all()
-        super().__init__(command_prefix="!", intents=intents)
+        super().__init__(
+            command_prefix="!", 
+            intents=intents,
+            help_command=None # Optional: Remove default help for custom ones
+        )
+        self.start_time = datetime.now()
 
     async def setup_hook(self):
-        if not os.path.exists('./cogs'): os.makedirs('./cogs')
+        """Initializes cogs and syncs slash commands."""
+        if not os.path.exists('./cogs'): 
+            os.makedirs('./cogs')
+            
         for filename in os.listdir('./cogs'):
             if filename.endswith('.py'):
                 try:
                     await self.load_extension(f'cogs.{filename[:-3]}')
+                    print(f"✅ Loaded Cog: {filename}")
                 except Exception as e:
-                    print(f"Failed to load {filename}: {e}")
+                    print(f"❌ Failed to load {filename}: {e}")
+        
         await self.tree.sync()
 
     async def on_ready(self):
-        print(f'🚀 {self.user} is online.')
-        channel = self.get_channel(1474051484390789253)
+        print(f'🚀 {self.user} is online and synchronized.')
+        
+        # Replace with your specific channel ID
+        channel_id = 1474051484390789253
+        channel = self.get_channel(channel_id)
         
         if channel:
-            # Time and Date calculations
-            now = datetime.now()
-            current_time = now.strftime("%I:%M %p") # 05:30 PM format
-            current_date = now.strftime("%Y-%m-%d") # 2026-02-25 format
+            # --- Time Calculation (Adding 4 Hours & 30 Minutes) ---
+            # Using timedelta ensures dates roll over correctly if it's near midnight
+            adjusted_now = datetime.now() + timedelta(hours=4, minutes=30)
             
-            # Embed Card Setup
+            current_time = adjusted_now.strftime("%I:%M %p")
+            current_date = adjusted_now.strftime("%Y-%m-%d")
+            
+            # --- Enhanced Embed ---
             embed = discord.Embed(
-                title="🟢 System Online",
-                description="The bot has been successfully deployed and is now active.",
-                color=discord.Color.green()
+                title="🟢 System Status: Online",
+                description="The high-performance core has been initialized successfully.",
+                color=discord.Color.from_rgb(46, 204, 113), # Nice emerald green
+                timestamp=datetime.now() # Real-time footer timestamp
             )
-            embed.add_field(name="📅 Start Date", value=current_date, inline=True)
-            embed.add_field(name="⏰ Start Time", value=current_time, inline=True)
             
-            # Github image link fix (using raw link for discord to display it properly)
+            embed.add_field(name="📅 Start Date", value=f"`{current_date}`", inline=True)
+            embed.add_field(name="⏰ Adjusted Time", value=f"`{current_time}`", inline=True)
+            embed.add_field(name="📡 Latency", value=f"`{round(self.latency * 1000)}ms`", inline=True)
+            
+            # Using the raw GitHub link provided
             image_url = "https://raw.githubusercontent.com/darkeryt20-web/DarkerYT-Server-Discode-Bot/main/Gemini_Generated_Image_312ul4312ul4312u.png"
             embed.set_image(url=image_url)
             
-            embed.set_footer(text="Performance Node: Koyeb-1 • Status: Running")
+            embed.set_thumbnail(url=self.user.display_avatar.url)
+            embed.set_footer(text="Powered By SXD • High Performance Mode", icon_url=self.user.display_avatar.url)
             
             await channel.send(embed=embed)
 
+# --- Entry Point ---
 async def main():
+    # Run the web server in a separate thread to keep the bot alive on hosts like Replit/Render
     threading.Thread(target=run_web, daemon=True).start()
+    
     bot = HighPerformanceBot()
+    
     async with bot:
+        # Check for token in Environment Variables
         token = os.getenv('DISCORD_TOKEN')
-        if token:
+        if not token:
+            print("❌ CRITICAL: 'DISCORD_TOKEN' not found in environment variables!")
+            return
+            
+        try:
             await bot.start(token)
-        else:
-            print("CRITICAL: DISCORD_TOKEN is missing!")
+        except discord.LoginFailure:
+            print("❌ CRITICAL: Invalid Discord Token provided.")
+        except Exception as e:
+            print(f"❌ AN ERROR OCCURRED: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("🤖 Bot is shutting down...")
