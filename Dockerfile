@@ -18,8 +18,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application
 COPY . .
 
-# Expose the health check port
+# Expose ports for both Flask health checks
 EXPOSE 8000
+EXPOSE 8001
 
-# Run the bot
-CMD ["python", "main.py"]
+# Start Bot 1 in the background and Bot 2 in the foreground
+CMD python main.py & python verify.py
