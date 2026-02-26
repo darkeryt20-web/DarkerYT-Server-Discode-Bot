@@ -5,11 +5,7 @@ import asyncio
 from datetime import datetime
 
 # --- Global Data for Dashboard ---
-verify_stats = {
-    "name": "Verification Bot",
-    "status": "Offline",
-    "last_run": ""
-}
+from shared_data import verify_stats
 
 # --- Verification Button Logic ---
 class VerifyView(discord.ui.View):
