@@ -1,30 +1,23 @@
 import discord
 from discord.ext import commands
 import os
-import threading
 import asyncio
-from flask import Flask
 from datetime import datetime
 
-# --- Health Check (Using Port 8001 for Koyeb/Docker compatibility) ---
-app = Flask(__name__)
-@app.route('/')
-def health(): return "Verification Bot is Live!", 200
-
-def run_web():
-    import logging
-    log = logging.getLogger('werkzeug')
-    log.setLevel(logging.ERROR)
-    app.run(host='0.0.0.0', port=8001)
+# --- Global Data for Dashboard ---
+verify_stats = {
+    "name": "Verification Bot",
+    "status": "Offline",
+    "last_run": ""
+}
 
 # --- Verification Button Logic ---
 class VerifyView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None) # Button stays active after bot restart
+        super().__init__(timeout=None)
 
     @discord.ui.button(label="Verify Me", style=discord.ButtonStyle.green, custom_id="verify_member_btn_v1", emoji="🛡️")
     async def verify(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Using the specific Role ID provided
         ROLE_ID = 1474052348824522854
         role = interaction.guild.get_role(ROLE_ID)
         
@@ -36,38 +29,36 @@ class VerifyView(discord.ui.View):
                     await interaction.user.add_roles(role)
                     await interaction.response.send_message(f"✅ Success! You now have the **{role.name}** role.", ephemeral=True)
                 except discord.Forbidden:
-                    await interaction.response.send_message("❌ **Permission Denied:** Move my Bot Role HIGHER than the Member role in Server Settings!", ephemeral=True)
+                    await interaction.response.send_message("❌ **Permission Denied:** Move my Bot Role HIGHER than the Member role!", ephemeral=True)
         else:
-            await interaction.response.send_message(f"❌ Error: Role ID `{ROLE_ID}` not found in this server.", ephemeral=True)
+            await interaction.response.send_message(f"❌ Error: Role ID `{ROLE_ID}` not found.", ephemeral=True)
 
 # --- Bot Logic ---
 class VerificationBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
-        intents.members = True # Essential for giving roles
+        intents.members = True 
         super().__init__(command_prefix="?", intents=intents)
 
     async def setup_hook(self):
-        # Register the persistent view
         self.add_view(VerifyView())
 
     async def on_ready(self):
+        # Update Dashboard Stats
+        verify_stats["status"] = "Online"
+        verify_stats["last_run"] = datetime.now().strftime("%I:%M %p")
+        
         print(f'🛡️ Verification Bot: {self.user} is online.')
         
-        # Target Channel ID
         CHANNEL_ID = 1474076593382096906
         channel = self.get_channel(CHANNEL_ID)
         
         if channel:
-            # --- Cleanup: Delete old bot messages to keep channel clean ---
             async for message in channel.history(limit=15):
                 if message.author == self.user:
-                    try:
-                        await message.delete()
-                    except:
-                        pass
+                    try: await message.delete()
+                    except: pass
 
-            # --- Create Verification Embed ---
             embed = discord.Embed(
                 title="🛡️ Server Verification",
                 description=(
@@ -76,7 +67,7 @@ class VerificationBot(commands.Bot):
                     "**Instructions:**\nClick the button below to receive the **Verified** "
                     "role and unlock all channels."
                 ),
-                color=discord.Color.from_rgb(43, 45, 49) # Dark Sleek Color
+                color=discord.Color.from_rgb(43, 45, 49)
             )
             embed.set_footer(text="Security System • Verified Role ID: 1474052348824522854")
             embed.set_thumbnail(url=self.user.display_avatar.url)
@@ -84,21 +75,19 @@ class VerificationBot(commands.Bot):
             await channel.send(embed=embed, view=VerifyView())
             print(f"✅ Fresh verification message sent to #{channel.name}")
 
-async def main():
-    # Start separate thread for health check
-    threading.Thread(target=run_web, daemon=True).start()
-    
+async def start_verify_bot():
     bot = VerificationBot()
     async with bot:
-        # Use the specific Verification Token variable
-        token = os.getenv('DISCORD_TOKEN_VERIFY')
+        # Use DISCORD_TOKEN_VERIFY if you have a separate token, 
+        # otherwise use the main DISCORD_TOKEN
+        token = os.getenv('DISCORD_TOKEN_VERIFY') or os.getenv('DISCORD_TOKEN')
         if token:
             await bot.start(token)
         else:
-            print("❌ ERROR: DISCORD_TOKEN_VERIFY environment variable not found!")
+            print("❌ ERROR: Verification Token not found!")
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        asyncio.run(start_verify_bot())
     except KeyboardInterrupt:
         print("Bot shutting down...")
