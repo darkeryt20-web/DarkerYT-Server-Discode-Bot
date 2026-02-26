@@ -8,12 +8,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 from datetime import datetime
 
 # --- Global Data for Dashboard ---
-welcome_stats = {
-    "name": "Welcomer Bot",
-    "status": "Offline",
-    "welcomes_sent": 0,
-    "last_welcome": "None"
-}
+from shared_data import welcome_stats
 
 # --- Bot Logic ---
 class WelcomeBot(commands.Bot):
@@ -113,3 +108,4 @@ async def start_welcome_bot():
 
 if __name__ == "__main__":
     asyncio.run(start_welcome_bot())
+
