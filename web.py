@@ -2,9 +2,8 @@ from flask import Flask, render_template_string, request
 import os
 import threading
 import subprocess
-from main import bot_stats  # Importing shared stats
-from verify import verify_stats
-from welcome import welcome_stats
+# web.py ඇතුළේ තිබුණ පරණ import අයින් කරලා මේක විතරක් දාන්න
+from shared_data import bot_stats, verify_stats, welcome_stats
 
 app = Flask(__name__)
 
