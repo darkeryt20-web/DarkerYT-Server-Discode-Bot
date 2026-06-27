@@ -2,13 +2,13 @@
 FROM python:3.11-slim
 
 # අවශ්‍ය System dependencies (Image processing සහ Discord voice/fonts සඳහා)
+# (මෙතනින් aiosqlite ඉවත් කර ඇත)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     libffi-dev \
     libnacl-dev \
     python3-dev \
     fonts-dejavu-core \
-    aiosqlite \
     && rm -rf /var/lib/apt/lists/*
 
 # ඇප් එක තියෙන folder එක හදනවා
