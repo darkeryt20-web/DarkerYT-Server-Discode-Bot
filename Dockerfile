@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
     libnacl-dev \
     python3-dev \
     fonts-dejavu-core \
+    aiosqlite \
     && rm -rf /var/lib/apt/lists/*
 
 # ඇප් එක තියෙන folder එක හදනවා
