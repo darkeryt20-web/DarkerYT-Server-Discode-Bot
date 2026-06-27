@@ -1,17 +1,33 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 import aiosqlite
 import datetime
+from aiohttp import web  # Web server එක background එකේ run කරන්න
 
 # --- CONFIGURATION ---
 BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
 THEME_COLOR = discord.Color.blue()
 FOOTER_TEXT = "Developed By Clouskee"
+PORT = 8003  # Dockerfile එකේ EXPOSE කරලා තියෙන port එක
 
+# --- WEB DASHBOARD SETUP (web.py කොටස) ---
+async def handle_dashboard(request):
+    return web.Response(text="<h1>Clouskee Bot Dashboard is Online!</h1>", content_type='text/html')
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get('/', handle_dashboard)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', PORT)
+    await site.start()
+    print(f"🌐 Web Dashboard started on port {PORT}")
+
+# --- DISCORD INTERACTION VIEWS ---
 class VerifyView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None) # Timeout is None so the button persists across bot restarts
+        super().__init__(timeout=None) # Bot restart වුණත් බටන් එක වැඩ කරන්න Timeout = None දාන්න ඕනේ
 
     @discord.ui.button(label="Verify", style=discord.ButtonStyle.primary, custom_id="clouskee_verify_button")
     async def verify_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -66,10 +82,12 @@ class VerifyView(discord.ui.View):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
+# --- MAIN BOT CLASS ---
 class ClouskeeBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
-        intents.members = True # Required to fetch user avatars and roles reliably
+        intents.members = True # User avatars සහ roles හරියටම ගන්න මේක True කරන්නම ඕනේ
+        intents.message_content = True 
         super().__init__(command_prefix="!", intents=intents)
         self.db = None
 
@@ -99,6 +117,9 @@ class ClouskeeBot(commands.Bot):
         # Register the persistent view
         self.add_view(VerifyView())
         
+        # Web server එක background එකේ run කරන්න පටන් ගන්නවා
+        await start_web_server()
+        
         # Sync slash commands globally
         await self.tree.sync()
 
@@ -119,6 +140,13 @@ async def is_trusted(interaction: discord.Interaction) -> bool:
 
     await interaction.response.send_message("❌ Access Denied: Only the Server Owner and Trusted Users can use this command.", ephemeral=True)
     return False
+
+# --- WELCOME EVENT (welcome.py කොටස) ---
+@bot.event
+async def on_member_join(member):
+    # සාමාජිකයෙක් සර්වර් එකට එකතු වූ විට ක්‍රියාත්මක වන කොටස (welcome.py)
+    print(f"👋 {member.name} joined the server!")
+    # අවශ්‍ය නම් මෙතනට welcome message එකක් යවන code එකක් දාන්න පුළුවන්.
 
 # --- SLASH COMMANDS ---
 
