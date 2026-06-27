@@ -26,4 +26,4 @@ EXPOSE 8003
 
 # පයිතන් scripts හතරම එකවර background එකේ run කරන විධානය
 # මෙහිදී 'wait' මඟින් scripts ඔක්කොම එකවර ක්‍රියාත්මකව තබා ගනී
-CMD python Verify_Bot.py & python verify.py & python welcome.py & python web.py && wait
+CMD ["python", "Verify_Bot.py"]
