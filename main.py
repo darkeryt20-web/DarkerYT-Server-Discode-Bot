@@ -1,111 +1,224 @@
-import discord
-from discord.ext import commands
-import os
-import asyncio
-import aiohttp
-from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont, ImageOps
-from datetime import datetime
+const { Client, GatewayIntentBits, ActivityType, EmbedBuilder, ApplicationCommandOptionType, ChannelType } = require('discord.js');
+const { joinVoiceChannel } = require('@discordjs/voice');
+const { initializeApp } = require('firebase/app');
+const { getFirestore, doc, setDoc, getDoc } = require('firebase/firestore');
 
-# --- Global Data for Dashboard ---
-from shared_data import welcome_stats
+const firebaseConfig = {
+  apiKey: "AIzaSyAEI93SAWsTPULIONvwp2UhI_5wBkfUTDo",
+  authDomain: "studio-9486178597-80f56.firebaseapp.com",
+  projectId: "studio-9486178597-80f56",
+  storageBucket: "studio-9486178597-80f56.firebasestorage.app",
+  messagingSenderId: "532281979014",
+  appId: "1:532281979014:web:41b8a030f75970111ca107"
+};
 
-# --- Bot Logic ---
-class WelcomeBot(commands.Bot):
-    def __init__(self):
-        intents = discord.Intents.default()
-        intents.members = True 
-        super().__init__(command_prefix="?", intents=intents)
-        self.bg_url = "https://raw.githubusercontent.com/darkeryt20-web/DarkerYT-Server-Discode-Bot/main/Gemini_Generated_Image_wqnfxgwqnfxgwqnf.png"
-        self.footer_icon = "https://raw.githubusercontent.com/darkeryt20-web/DarkerYT-Server-Discode-Bot/main/Copilot_20260223_123057.png"
-        self.TARGET_ROLE_ID = 1474052348824522854
-        self.WELCOME_CHANNEL_ID = 1474041097498923079
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
-    async def create_welcome_card(self, member: discord.Member):
-        async with aiohttp.ClientSession() as session:
-            try:
-                async with session.get(self.bg_url) as resp:
-                    bg_bytes = await resp.read()
-                async with session.get(member.display_avatar.url) as resp:
-                    avatar_bytes = await resp.read()
-            except Exception as e:
-                print(f"Error downloading images: {e}")
-                return None
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildMessages
+  ]
+});
 
-        background = Image.open(BytesIO(bg_bytes)).convert("RGBA")
-        background = background.resize((1024, 500))
-        
-        avatar = Image.open(BytesIO(avatar_bytes)).convert("RGBA")
-        size = (220, 220)
-        avatar = ImageOps.fit(avatar, size, centering=(0.5, 0.5))
-        mask = Image.new('L', size, 0)
-        ImageDraw.Draw(mask).ellipse((0, 0) + size, fill=255)
-        avatar.putalpha(mask)
+const TOKEN = "BOT_TOKEN";
+let statusIntervals = new Map();
 
-        bg_w, bg_h = background.size
-        av_w, av_h = avatar.size
-        offset = ((bg_w - av_w) // 2, (bg_h - av_h) // 2 - 50)
-        background.paste(avatar, offset, avatar)
+client.once('ready', async () => {
+  console.log(`${client.user.tag} is online.`);
 
-        draw = ImageDraw.Draw(background)
-        try:
-            # Note: Ensure this font exists in your Docker environment
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 55)
-        except:
-            font = ImageFont.load_default()
+  const commands = [
+    {
+      name: 'setchannel',
+      description: 'Set the voice channel for the bot to join on startup',
+      options: [{ name: 'channel', type: ApplicationCommandOptionType.Channel, description: 'Select a voice channel', required: true }]
+    },
+    {
+      name: 'setstatus',
+      description: 'Set or update a custom streaming status',
+      options: [
+        { name: 'id', type: ApplicationCommandOptionType.Integer, description: 'Status ID/Position', required: true },
+        { name: 'text', type: ApplicationCommandOptionType.String, description: 'Status text', required: true }
+      ]
+    },
+    {
+      name: 'removestatus',
+      description: 'Remove a status by ID',
+      options: [{ name: 'id', type: ApplicationCommandOptionType.Integer, description: 'Status ID to remove', required: true }]
+    },
+    {
+      name: 'getstatus',
+      description: 'Get list of all saved statuses'
+    },
+    {
+      name: 'setbotchannel',
+      description: 'Set current channel for startup notifications'
+    }
+  ];
 
-        name_text = member.name.upper()
-        bbox = draw.textbbox((0, 0), name_text, font=font)
-        tw = bbox[2] - bbox[0]
-        draw.text(((bg_w - tw) // 2, offset[1] + av_h + 20), name_text, font=font, fill="#00FFFF")
+  await client.application.commands.set(commands);
 
-        final_buffer = BytesIO()
-        background.save(final_buffer, format="PNG")
-        final_buffer.seek(0)
-        return final_buffer
+  client.guilds.cache.forEach(async (guild) => {
+    const docRef = doc(db, "guilds", guild.id);
+    const docSnap = await getDoc(docRef);
 
-    async def on_ready(self):
-        welcome_stats["status"] = "Online"
-        print(f"🌟 Welcomer Bot: {self.user} is online.")
+    if (docSnap.exists()) {
+      const data = docSnap.data();
 
-    @commands.Cog.listener()
-    async def on_member_update(self, before: discord.Member, after: discord.Member):
-        role_added = any(role.id == self.TARGET_ROLE_ID for role in after.roles) and \
-                     not any(role.id == self.TARGET_ROLE_ID for role in before.roles)
+      if (data.voiceChannelId) {
+        try {
+          joinVoiceChannel({
+            channelId: data.voiceChannelId,
+            guildId: guild.id,
+            adapterCreator: guild.voiceAdapterCreator,
+          });
+        } catch (e) {}
+      }
 
-        if role_added:
-            channel = self.get_channel(self.WELCOME_CHANNEL_ID)
-            if not channel: return
+      if (data.textChannelId) {
+        const channel = guild.channels.cache.get(data.textChannelId);
+        if (channel) {
+          const fetchedUser = await client.users.fetch(client.user.id, { force: true });
+          const embed = new EmbedBuilder()
+            .setTitle("Bot Online")
+            .setDescription("Gida text ekak dapu ekak")
+            .setThumbnail(client.user.displayAvatarURL({ dynamic: true }))
+            .setColor("#5865F2");
+          
+          if (fetchedUser.bannerURL()) {
+            embed.setImage(fetchedUser.bannerURL({ size: 1024 }));
+          }
 
-            print(f"🌟 Role recognized for {after.name}. Generating welcome message...")
-            
-            image_data = await self.create_welcome_card(after)
-            file = discord.File(fp=image_data, filename="welcome.png") if image_data else None
+          channel.send({ embeds: [embed] }).catch(() => {});
+        }
+      }
 
-            embed = discord.Embed(
-                title="Welcome to the Premium Network!",
-                description=f"Hello {after.mention}, welcome to **-| SXD VPN |- Premium Network Flash Deals**!",
-                color=discord.Color.from_str("#2F3136")
-            )
-            
-            if file: embed.set_image(url="attachment://welcome.png")
-            embed.set_footer(text="Powered By SXD", icon_url=self.footer_icon)
+      if (data.statuses && data.statuses.length > 0) {
+        startStatusRotation(guild.id, data.statuses);
+      }
+    }
+  });
+});
 
-            await channel.send(content=f"Welcome {after.mention}!", embed=embed, file=file)
-            
-            # Update Dashboard Stats
-            welcome_stats["welcomes_sent"] += 1
-            welcome_stats["last_welcome"] = after.name
+function startStatusRotation(guildId, statuses) {
+  if (statusIntervals.has(guildId)) {
+    clearInterval(statusIntervals.get(guildId));
+  }
 
-async def start_welcome_bot():
-    bot = WelcomeBot()
-    async with bot:
-        token = os.getenv('DISCORD_TOKEN_WELCOME') or os.getenv('DISCORD_TOKEN')
-        if token:
-            await bot.start(token)
-        else:
-            print("❌ MISSING: Welcome Bot Token")
+  let index = 0;
+  const updateActivity = () => {
+    if (!statuses || statuses.length === 0) {
+      client.user.setPresence({ activities: [] });
+      return;
+    }
+    const current = statuses[index];
+    client.user.setActivity(current.text, {
+      type: ActivityType.Streaming,
+      url: 'https://www.twitch.tv/discord'
+    });
+    index = (index + 1) % statuses.length;
+  };
 
-if __name__ == "__main__":
-    asyncio.run(start_welcome_bot())
+  updateActivity();
+  const interval = setInterval(updateActivity, 10000); 
+  statusIntervals.set(guildId, interval);
+}
 
+client.on('interactionCreate', async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  if (interaction.guild.ownerId !== interaction.user.id) {
+    return interaction.reply({ content: "Meka use karanna puluvan Server Owner ta vitharai.", ephemeral: true });
+  }
+
+  const { commandName, options, guildId, channelId } = interaction;
+  const docRef = doc(db, "guilds", guildId);
+  const docSnap = await getDoc(docRef);
+  let data = docSnap.exists() ? docSnap.data() : { statuses: [] };
+
+  if (commandName === 'setchannel') {
+    const channel = options.getChannel('channel');
+    if (channel.type !== ChannelType.GuildVoice) {
+      return interaction.reply({ content: "Karunakarala Voice Channel ekak thoranna.", ephemeral: true });
+    }
+
+    data.voiceChannelId = channel.id;
+    await setDoc(docRef, data, { merge: true });
+
+    joinVoiceChannel({
+      channelId: channel.id,
+      guildId: guildId,
+      adapterCreator: interaction.guild.voiceAdapterCreator,
+    });
+
+    return interaction.reply({ content: `Voice channel eka set kala: ${channel.name}`, ephemeral: true });
+  }
+
+  if (commandName === 'setstatus') {
+    const id = options.getInteger('id');
+    const text = options.getString('text');
+
+    let statuses = data.statuses || [];
+    const existingIndex = statuses.findIndex(s => s.id === id);
+
+    if (existingIndex !== -1) {
+      statuses[existingIndex].text = text;
+    } else {
+      statuses.push({ id, text });
+    }
+
+    statuses.sort((a, b) => a.id - b.id);
+    data.statuses = statuses;
+
+    await setDoc(docRef, data, { merge: true });
+    startStatusRotation(guildId, statuses);
+
+    return interaction.reply({ content: `Status eka ID ${id} lata update kala.`, ephemeral: true });
+  }
+
+  if (commandName === 'removestatus') {
+    const id = options.getInteger('id');
+    let statuses = data.statuses || [];
+
+    const filtered = statuses.filter(s => s.id !== id);
+    const updatedStatuses = filtered.map((s, idx) => ({
+      id: idx + 1,
+      text: s.text
+    }));
+
+    data.statuses = updatedStatuses;
+    await setDoc(docRef, data, { merge: true });
+    startStatusRotation(guildId, updatedStatuses);
+
+    return interaction.reply({ content: `ID ${id} status eka ain kala saha okkoma re-index kala.`, ephemeral: true });
+  }
+
+  if (commandName === 'getstatus') {
+    let statuses = data.statuses || [];
+    if (statuses.length === 0) {
+      return interaction.reply({ content: "Kisima status ekak saved ne.", ephemeral: true });
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle("Saved Statuses")
+      .setColor("#5865F2");
+
+    let description = "";
+    statuses.forEach(s => {
+      description += `**ID:** ${s.id} | **Text:** ${s.text}\n`;
+    });
+
+    embed.setDescription(description);
+    return interaction.reply({ embeds: [embed], ephemeral: true });
+  }
+
+  if (commandName === 'setbotchannel') {
+    data.textChannelId = channelId;
+    await setDoc(docRef, data, { merge: true });
+    return interaction.reply({ content: "Bot online notification channel eka set kala.", ephemeral: true });
+  }
+});
+
+client.login(TOKEN);
