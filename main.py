@@ -23,7 +23,7 @@ const client = new Client({
   ]
 });
 
-const TOKEN = "BOT_TOKEN";
+const TOKEN = "M_TOKEN";
 let statusIntervals = new Map();
 
 client.once('ready', async () => {
