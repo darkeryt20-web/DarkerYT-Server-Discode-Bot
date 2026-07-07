@@ -6,7 +6,7 @@ import datetime
 from aiohttp import web  # Web server එක background එකේ run කරන්න
 import os
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("V_TOKEN")
 THEME_COLOR = discord.Color.blue()
 FOOTER_TEXT = "Developed By Clouskee"
 PORT = 8003  # Dockerfile එකේ EXPOSE කරලා තියෙන port එක
