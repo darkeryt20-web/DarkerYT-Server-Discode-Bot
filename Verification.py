@@ -1,8 +1,12 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS  # මෙය අලුතින් එක් කරන්න
 import psycopg2
 import os
 
 app = Flask(__name__)
+CORS(app)  # මෙය එක් කිරීමෙන් සියලුම Origin වලට ඉඩ ලැබේ
+
+# ඉතිරි කේතය එලෙසම තබන්න...
 
 # DB URL එක Environment Variable එකෙන් ලබා ගැනීම (ආරක්ෂිතයි)
 DB_URL = os.environ.get('DATABASE_URL')
