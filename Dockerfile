@@ -7,8 +7,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# script එකට ක්‍රියාත්මක වීමේ අවසරය ලබා දෙන්න
+# entrypoint.sh ගොනුවට ක්‍රියාත්මක වීමේ අවසරය දෙන්න
 RUN chmod +x entrypoint.sh
 
-# container එක ආරම්භ වන විට script එක ක්‍රියාත්මක කරන්න
+# container එක ආරම්භයේදී entrypoint.sh ක්‍රියාත්මක කරන්න
 CMD ["./entrypoint.sh"]
