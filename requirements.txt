@@ -3,3 +3,7 @@ gunicorn
 psycopg2-binary
 flask-cors
 requests
+
+discord.py
+psycopg2-binary
+python-dotenv
