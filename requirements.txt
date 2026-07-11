@@ -3,3 +3,4 @@ flask
 aiohttp
 Pillow
 aiosqlite
+psycopg2-binary
