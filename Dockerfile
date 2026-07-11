@@ -10,4 +10,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Gunicorn හරහා Flask ඇප් එක ක්‍රියාත්මක කිරීම (Koyeb සඳහා සුදුසුම ක්‍රමය)
-CMD ["gunicorn", "-b", "0.0.0.0:8000", "Verification:app"]
+CMD ["sh", "-c", "gunicorn -b 0.0.0.0:${PORT:-8000} Verification:app"]
