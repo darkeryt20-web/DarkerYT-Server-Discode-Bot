@@ -29,4 +29,4 @@ EXPOSE 8003
 # පයිතන් script එක run කිරීම
 # අවවාදය: ඔබ bot.py සහ Verification.py යන දෙකම එකම කෝඩ් එකකින් සමන්විත වන පරිදි (Duplicate) උඩුගත කර ඇත.
 # bot.py එකම පාවිච්චි කිරීම සුදුසුය.
-CMD ["python", "bot.py"]
+CMD ["python", "Verification.py"]
