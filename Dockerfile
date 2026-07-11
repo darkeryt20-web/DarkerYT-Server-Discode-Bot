@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# පද්ධතිමය අවශ්‍යතා ස්ථාපනය කිරීම
+# අවශ්‍ය System dependencies ස්ථාපනය කිරීම
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     libffi-dev \
@@ -12,13 +12,13 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Requirements ස්ථාපනය කිරීම
+# Requirements install කිරීම
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
-# සියලුම කෝඩ් ගොනු copy කිරීම
+# සියලුම ෆයිල්ස් ඇප් එක ඇතුළට කොපි කරනවා
 COPY . .
 
-# Verification.py ගොනුව ක්‍රියාත්මක කිරීම
+# Verification.py ක්‍රියාත්මක කිරීම
 CMD ["python", "Verification.py"]
