@@ -19,4 +19,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # bot.py ගොනුව භාවිතා කිරීම වඩා සුදුසුය
-CMD ["python", "bot.py"]
+CMD ["python", "Verification.py"]
