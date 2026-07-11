@@ -1,8 +1,2 @@
-discord.py
 flask
-aiohttp
-Pillow
-aiosqlite
-psycopg2-binary
-python-dotenv
-dotenv
+gunicorn
