@@ -5,3 +5,4 @@ Pillow
 aiosqlite
 psycopg2-binary
 python-dotenv
+dotenv
