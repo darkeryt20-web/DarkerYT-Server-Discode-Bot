@@ -28,7 +28,7 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
-    # Table for guild configurations
+    # Table for guild configurations updated with new roles
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS guild_config (
             guild_id BIGINT PRIMARY KEY,
@@ -37,11 +37,26 @@ def init_db():
             verify_role_id BIGINT,
             verify_message_id BIGINT,
             marketplace_role_id BIGINT,
-            development_role_id BIGINT,
-            software_role_id BIGINT,
-            hosting_role_id BIGINT
+            hostings_vpns_role_id BIGINT,
+            software_zone_role_id BIGINT,
+            chilling_gaming_role_id BIGINT,
+            get_free_rewards_role_id BIGINT
         )
     ''')
+    
+    # Safely add columns if upgrading an existing database
+    alter_queries = [
+        "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS hostings_vpns_role_id BIGINT;",
+        "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS software_zone_role_id BIGINT;",
+        "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS chilling_gaming_role_id BIGINT;",
+        "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS get_free_rewards_role_id BIGINT;"
+    ]
+    for q in alter_queries:
+        try:
+            cursor.execute(q)
+        except:
+            pass
+
     # Table for verifications
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS verifications (
@@ -66,10 +81,11 @@ init_db()
 
 # --- Animated Interest Emojis ---
 ANIMATED_EMOJI_MENTIONS = {
-    "marketplace": "<a:Marketplace_Hub:1524464249764843560>",
-    "development": "<a:Development_Tech:1524464743878885587>",
-    "software": "<a:Premium_Software:1524465103033077791>",
-    "hosting": "<a:Infrastructure_Hosting:1524465283127836853>",
+    "marketplace": "<a:MarketPlace:1525719447854125196>",
+    "hostings_vpns": "<a:Hostings_VPNs:1525719972683317308>",
+    "software_zone": "<a:Software_Zone:1525720592882597898>",
+    "chilling_gaming": "<a:Chilling_Gaming:1525721015718514748>",
+    "get_free_rewards": "<a:Get_Free_Rewards:1525721252898275451>",
     "explore_everything": "<a:Explore_Everything:1524465515484025015>",
 }
 
@@ -80,36 +96,43 @@ ANIMATED_EMOJIS = {
 
 DB_COLUMN_TO_CONFIG_IDX = {
     "marketplace_role_id": 4,
-    "development_role_id": 5,
-    "software_role_id": 6,
-    "hosting_role_id": 7,
+    "hostings_vpns_role_id": 5,
+    "software_zone_role_id": 6,
+    "chilling_gaming_role_id": 7,
+    "get_free_rewards_role_id": 8,
 }
 
 # --- Interest Options Mapping ---
 INTEREST_OPTIONS = {
     "marketplace": {
-        "label": "Marketplace Hub (Sell & Buy Items)",
-        "short_label": "Marketplace Hub",
-        "description": "Sell & Buy Items",
+        "label": "MarketPlace",
+        "short_label": "MarketPlace",
+        "description": "Buy, sell, and trade",
         "db_column": "marketplace_role_id",
     },
-    "development": {
-        "label": "Development & Tech (Build Web Site or Desktop App)",
-        "short_label": "Development & Tech",
-        "description": "Build Web Site or Desktop App",
-        "db_column": "development_role_id",
+    "hostings_vpns": {
+        "label": "Hostings & VPNs",
+        "short_label": "Hostings & VPNs",
+        "description": "Secure VPNs and reliable hosting",
+        "db_column": "hostings_vpns_role_id",
     },
-    "software": {
-        "label": "Premium Software Solutions (Buy Softwares)",
-        "short_label": "Premium Software Solutions",
-        "description": "Buy Softwares",
-        "db_column": "software_role_id",
+    "software_zone": {
+        "label": "Software Zone",
+        "short_label": "Software Zone",
+        "description": "Premium software and apps",
+        "db_column": "software_zone_role_id",
     },
-    "hosting": {
-        "label": "Infrastructure & Hosting (Buy VPN, VPS Hostings)",
-        "short_label": "Infrastructure & Hosting",
-        "description": "Buy VPN, VPS Hostings",
-        "db_column": "hosting_role_id",
+    "chilling_gaming": {
+        "label": "Chilling & Gaming",
+        "short_label": "Chilling & Gaming",
+        "description": "Hang out and play games",
+        "db_column": "chilling_gaming_role_id",
+    },
+    "get_free_rewards": {
+        "label": "Get Free Rewards",
+        "short_label": "Get Free Rewards",
+        "description": "Claim your free drops and rewards",
+        "db_column": "get_free_rewards_role_id",
     },
     "explore_everything": {
         "label": "Explore Everything (All of the above)",
@@ -121,7 +144,7 @@ INTEREST_OPTIONS = {
 
 def format_interest_options_embed() -> str:
     lines = []
-    for key in ("marketplace", "development", "software", "hosting", "explore_everything"):
+    for key in ("marketplace", "hostings_vpns", "software_zone", "chilling_gaming", "get_free_rewards", "explore_everything"):
         info = INTEREST_OPTIONS[key]
         lines.append(f"{ANIMATED_EMOJI_MENTIONS[key]} {info['label']}")
     return "\n".join(lines)
@@ -171,7 +194,7 @@ def collect_interest_roles(guild, config, selected_values):
             roles.append(role)
 
     if "explore_everything" in selected_values:
-        for idx in (4, 5, 6, 7):
+        for idx in (4, 5, 6, 7, 8):
             if config and config[idx]:
                 add_role(guild.get_role(config[idx]))
     else:
@@ -227,7 +250,7 @@ def get_guild_config(guild_id):
     cursor = conn.cursor()
     cursor.execute('''
         SELECT verify_channel_id, voice_channel_id, verify_role_id, verify_message_id, 
-               marketplace_role_id, development_role_id, software_role_id, hosting_role_id 
+               marketplace_role_id, hostings_vpns_role_id, software_zone_role_id, chilling_gaming_role_id, get_free_rewards_role_id
         FROM guild_config WHERE guild_id = %s
     ''', (guild_id,))
     row = cursor.fetchone()
@@ -300,12 +323,13 @@ class InterestSelectView(View):
         placeholder="Select your interest(s)...",
         custom_id="clouskee_interest_select",
         min_values=1,
-        max_values=4,
+        max_values=5,
         options=[
-            discord.SelectOption(label="Marketplace Hub", value="marketplace", description="Sell & Buy Items", emoji=ANIMATED_EMOJIS["marketplace"]),
-            discord.SelectOption(label="Development & Tech", value="development", description="Build Web Site or Desktop App", emoji=ANIMATED_EMOJIS["development"]),
-            discord.SelectOption(label="Premium Software Solutions", value="software", description="Buy Softwares", emoji=ANIMATED_EMOJIS["software"]),
-            discord.SelectOption(label="Infrastructure & Hosting", value="hosting", description="Buy VPN, VPS Hostings", emoji=ANIMATED_EMOJIS["hosting"]),
+            discord.SelectOption(label="MarketPlace", value="marketplace", description="Buy, sell, and trade", emoji=ANIMATED_EMOJIS["marketplace"]),
+            discord.SelectOption(label="Hostings & VPNs", value="hostings_vpns", description="Secure VPNs and reliable hosting", emoji=ANIMATED_EMOJIS["hostings_vpns"]),
+            discord.SelectOption(label="Software Zone", value="software_zone", description="Premium software and apps", emoji=ANIMATED_EMOJIS["software_zone"]),
+            discord.SelectOption(label="Chilling & Gaming", value="chilling_gaming", description="Hang out and play games", emoji=ANIMATED_EMOJIS["chilling_gaming"]),
+            discord.SelectOption(label="Get Free Rewards", value="get_free_rewards", description="Claim your free drops and rewards", emoji=ANIMATED_EMOJIS["get_free_rewards"]),
             discord.SelectOption(label="Explore Everything", value="explore_everything", description="All of the above", emoji=ANIMATED_EMOJIS["explore_everything"]),
         ],
     )
@@ -434,7 +458,7 @@ class VerificationView(View):
                 "You are just one step away from joining **Clouskee**!\n"
                 "To help us personalize your experience and unlock the right channels for you, "
                 "please select what brings you to Clouskee today using the options below "
-                "(you may choose up to **4** interests, or pick **Explore Everything** for all):\n\n"
+                "(you may choose up to **5** interests, or pick **Explore Everything** for all):\n\n"
                 f"{format_interest_options_embed()}"
             ),
             color=discord.Color.blurple()
@@ -484,7 +508,7 @@ async def on_member_join(member: discord.Member):
 
     record = get_user_verification(member.guild.id, member.id)
     if not record:
-        return  # Never verified before
+        return  
 
     interest_string = record[6]
     roles_to_reassign = []
@@ -558,7 +582,7 @@ async def set_verification_channel(interaction: discord.Interaction, channel: di
     await interaction.response.defer(ephemeral=True)
 
     embed = discord.Embed(
-        title="**<a:sheild:152448421594619944> Welcome to Clouskee**",
+        title="**<a:sheild:1525721252898275451> Welcome to Clouskee**",
         description=(
             "Welcome to the official **Clouskee** Discord Server! Your premier destination for "
             "high-performance **VPNs**, **VPS deployment**, **Discord Bot hosting**, and premium **Game Servers**.\n\n"
@@ -780,39 +804,48 @@ async def set_role(interaction: discord.Interaction, role: discord.Role):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-@bot.tree.command(name="set_marketplace_role", description="Sets the role for the Marketplace Hub interest.")
-@app_commands.describe(role="The role for Marketplace Hub")
+@bot.tree.command(name="set_marketplace_role", description="Sets the role for the MarketPlace interest.")
+@app_commands.describe(role="The role for MarketPlace")
 @is_guild_owner()
 async def set_marketplace_role(interaction: discord.Interaction, role: discord.Role):
     update_guild_config(interaction.guild_id, 'marketplace_role_id', role.id)
-    embed = discord.Embed(title="**✅ Success**", description=f"**Marketplace Hub** role has been set to {role.mention}.", color=discord.Color.green())
+    embed = discord.Embed(title="**✅ Success**", description=f"**MarketPlace** role has been set to {role.mention}.", color=discord.Color.green())
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-@bot.tree.command(name="set_development_role", description="Sets the role for the Development & Tech interest.")
-@app_commands.describe(role="The role for Development & Tech")
+@bot.tree.command(name="set_hostings_role", description="Sets the role for the Hostings & VPNs interest.")
+@app_commands.describe(role="The role for Hostings & VPNs")
 @is_guild_owner()
-async def set_development_role(interaction: discord.Interaction, role: discord.Role):
-    update_guild_config(interaction.guild_id, 'development_role_id', role.id)
-    embed = discord.Embed(title="**✅ Success**", description=f"**Development & Tech** role has been set to {role.mention}.", color=discord.Color.green())
+async def set_hostings_role(interaction: discord.Interaction, role: discord.Role):
+    update_guild_config(interaction.guild_id, 'hostings_vpns_role_id', role.id)
+    embed = discord.Embed(title="**✅ Success**", description=f"**Hostings & VPNs** role has been set to {role.mention}.", color=discord.Color.green())
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-@bot.tree.command(name="set_software_role", description="Sets the role for the Premium Software Solutions interest.")
-@app_commands.describe(role="The role for Premium Software Solutions")
+@bot.tree.command(name="set_software_role", description="Sets the role for the Software Zone interest.")
+@app_commands.describe(role="The role for Software Zone")
 @is_guild_owner()
 async def set_software_role(interaction: discord.Interaction, role: discord.Role):
-    update_guild_config(interaction.guild_id, 'software_role_id', role.id)
-    embed = discord.Embed(title="**✅ Success**", description=f"**Premium Software Solutions** role has been set to {role.mention}.", color=discord.Color.green())
+    update_guild_config(interaction.guild_id, 'software_zone_role_id', role.id)
+    embed = discord.Embed(title="**✅ Success**", description=f"**Software Zone** role has been set to {role.mention}.", color=discord.Color.green())
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-@bot.tree.command(name="set_hosting_role", description="Sets the role for the Infrastructure & Hosting interest.")
-@app_commands.describe(role="The role for Infrastructure & Hosting")
+@bot.tree.command(name="set_chilling_role", description="Sets the role for the Chilling & Gaming interest.")
+@app_commands.describe(role="The role for Chilling & Gaming")
 @is_guild_owner()
-async def set_hosting_role(interaction: discord.Interaction, role: discord.Role):
-    update_guild_config(interaction.guild_id, 'hosting_role_id', role.id)
-    embed = discord.Embed(title="**✅ Success**", description=f"**Infrastructure & Hosting** role has been set to {role.mention}.", color=discord.Color.green())
+async def set_chilling_role(interaction: discord.Interaction, role: discord.Role):
+    update_guild_config(interaction.guild_id, 'chilling_gaming_role_id', role.id)
+    embed = discord.Embed(title="**✅ Success**", description=f"**Chilling & Gaming** role has been set to {role.mention}.", color=discord.Color.green())
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(name="set_rewards_role", description="Sets the role for the Get Free Rewards interest.")
+@app_commands.describe(role="The role for Get Free Rewards")
+@is_guild_owner()
+async def set_rewards_role(interaction: discord.Interaction, role: discord.Role):
+    update_guild_config(interaction.guild_id, 'get_free_rewards_role_id', role.id)
+    embed = discord.Embed(title="**✅ Success**", description=f"**Get Free Rewards** role has been set to {role.mention}.", color=discord.Color.green())
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
