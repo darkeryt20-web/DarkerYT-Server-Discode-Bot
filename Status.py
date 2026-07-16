@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 # .env file එක load කරගැනීම
 load_dotenv()
 
-TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = os.getenv("S_BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Intents සැකසීම
