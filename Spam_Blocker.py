@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 # Load environment variables
 load_dotenv()
-TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = os.getenv("SB_BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Bot Setup
