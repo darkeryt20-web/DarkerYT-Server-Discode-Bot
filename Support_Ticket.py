@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
-TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = os.getenv("ST_BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Bot Setup
