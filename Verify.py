@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
-TOKEN = os.getenv('DISCORD_TOKEN')
+TOKEN = os.getenv('V_BOT_TOKEN')
 DATABASE_URL = os.getenv('DATABASE_URL')
 
 # Configure Intents
