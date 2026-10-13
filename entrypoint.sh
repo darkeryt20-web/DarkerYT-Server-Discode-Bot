@@ -7,6 +7,7 @@ gunicorn -b 0.0.0.0:${PORT:-8000} CDTG:app &
 python Verify.py &
 python Spam_Blocker.py &
 python Status.py &
+[ython portfolio.py &
 
 # 3. අවසාන bot එක foreground එකේ run කරන්න (එතකොට container එක දිගටම run වෙනවා)
 python Support_Ticket.py
