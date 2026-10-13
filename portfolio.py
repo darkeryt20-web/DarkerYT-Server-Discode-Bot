@@ -1,13 +1,18 @@
 import asyncio
 import datetime
+import os
 import discord
 from discord.ext import commands, tasks
 import asyncpg
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # --- CONFIGURATION ---
-GUILD_ID = 1507562779135971398
 TOKEN = os.getenv("P_BOT_TOKEN")
 DATABASE_URL = os.getenv("P_DB_URL")
+GUILD_ID = 1507562779135971398
 
 intents = discord.Intents.default()
 intents.members = True
