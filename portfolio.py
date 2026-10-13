@@ -5,9 +5,9 @@ from discord.ext import commands, tasks
 import asyncpg
 
 # --- CONFIGURATION ---
-TOKEN = "P_BOT_TOKEN"
 GUILD_ID = 1507562779135971398
-DATABASE_URL = "P_DB_URL"
+TOKEN = os.getenv("P_BOT_TOKEN")
+DATABASE_URL = os.getenv("P_DB_URL")
 
 intents = discord.Intents.default()
 intents.members = True
