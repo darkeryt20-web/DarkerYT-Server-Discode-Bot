@@ -1,7 +1,15 @@
+import os
+import asyncio
 import discord
 from discord.ext import commands
 from aiohttp import web
-import asyncio
+from dotenv import load_dotenv
+
+# Local එකේදී .env ගොනුව Read කරගැනීමට (Koyeb වලදී මෙය ස්වයංක්‍රීයව Environment Variables වලින් ලබා ගනී)
+load_dotenv()
+
+# .env එකෙන් හෝ Koyeb Settings වලින් Token එක ලබා ගැනීම
+TOKEN = os.getenv("DISCORD_TOKEN")
 
 # Bot Setup
 intents = discord.Intents.default()
@@ -73,13 +81,20 @@ async def main():
     app = await init_app()
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, 'localhost', 8080)
+    
+    # Koyeb එකේදී Port එක අල්ලගැනීමට සකස් කිරීම
+    port = int(os.environ.get("PORT", 8080))
+    site = web.TCPSite(runner, '0.0.0.0', port)
     
     await site.start()
-    print("Verification Web Server running on http://localhost:8080")
+    print(f"Verification Web Server running on http://0.0.0.0:{port}")
     
-    # ඔබේ නියම Bot Token එක මෙහි දමන්න
-    await bot.start("Q_BOT_TOKEN")
+    if not TOKEN:
+        print("Error: DISCORD_TOKEN is missing in environment variables!")
+        return
+
+    # මෙන්න මෙතැන දැන් .env එකෙන් එන Variable එක පාවිච්චි වේ
+    await bot.start(TOKEN)
 
 if __name__ == "__main__":
     asyncio.run(main())
