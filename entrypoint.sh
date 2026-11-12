@@ -8,6 +8,7 @@ python Verify.py &
 python Spam_Blocker.py &
 python Status.py &
 python portfolio.py &
+python bot.py &
 
 # 3. අවසාන bot එක foreground එකේ run කරන්න (එතකොට container එක දිගටම run වෙනවා)
 python Support_Ticket.py
