@@ -1,5 +1,0 @@
-discord.py
-python-dotenv
-PyNaCl
-requests
-Pillow
