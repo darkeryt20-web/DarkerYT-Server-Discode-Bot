@@ -1,15 +1,5 @@
-flask
-gunicorn
-psycopg2-binary
-flask-cors
-requests
-
 discord.py
 python-dotenv
 PyNaCl
-davey
-pyrogram
-tgcrypto
-supabase
+requests
 Pillow
-asyncpg
