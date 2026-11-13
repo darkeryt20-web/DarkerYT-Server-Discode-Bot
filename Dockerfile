@@ -15,4 +15,4 @@ COPY . .
 EXPOSE 8000
 
 # Run the bot
-CMD ["python", "main.py"]
+CMD ["python", "main.py", "verify.py"]
