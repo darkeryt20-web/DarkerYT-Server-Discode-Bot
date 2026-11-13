@@ -7,7 +7,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 load_dotenv()
-TOKEN = os.getenv("DISCORD_TOKEN")
+TOKEN = os.getenv("VERIFY_DISCORD_TOKEN")
 
 # Intents setup (Members intent is required for auto-role on rejoin)
 intents = discord.Intents.default()
