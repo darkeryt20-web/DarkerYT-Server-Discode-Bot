@@ -7,8 +7,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 load_dotenv()
-# Support bot එකට වෙනම token එකක් (SUPPORT_TOKEN) හෝ DISCORD_TOKEN පාවිච්චි කළ හැක
-TOKEN = os.getenv("SUPPORT_TOKEN", os.getenv("SUPPORT_DISCORD_TOKEN"))
+TOKEN = os.getenv("SUPPORT_TOKEN", os.getenv("DISCORD_TOKEN"))
 
 intents = discord.Intents.default()
 intents.members = True
@@ -24,13 +23,6 @@ class TicketCreateModal(discord.ui.Modal, title="Create Support Ticket"):
         placeholder="Explain your problem or request here...",
         required=True,
         max_length=1000
-    )
-    extra_users = discord.ui.TextInput(
-        label="Mention usernames or IDs (Optional)",
-        style=discord.TextStyle.short,
-        placeholder="e.g. @user1, @user2 or user IDs",
-        required=False,
-        max_length=100
     )
 
     async def on_submit(self, interaction: discord.Interaction):
@@ -64,25 +56,13 @@ class TicketCreateModal(discord.ui.Modal, title="Create Support Ticket"):
 
         channel_name = f"support-ticket-{ticket_id}"
 
-        # Setup permissions for the private ticket channel
+        # Setup permissions (Only User, Bot, and Support Role)
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True),
             interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
             support_role: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
         }
-
-        # Parse extra mentioned users if any
-        added_members = [interaction.user]
-        extra_text = self.extra_users.value.strip()
-        if extra_text:
-            for word in extra_text.split():
-                clean_id = word.replace("<@", "").replace(">", "").replace("!", "")
-                if clean_id.isdigit():
-                    member = guild.get_member(int(clean_id))
-                    if member and member not in added_members:
-                        overwrites[member] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
-                        added_members.append(member)
 
         try:
             ticket_channel = await guild.create_text_channel(
@@ -102,28 +82,55 @@ class TicketCreateModal(discord.ui.Modal, title="Create Support Ticket"):
             "ticket_id": ticket_id,
             "user_id": interaction.user.id,
             "claimed_by": None,
-            "status": "OPEN",
-            "participants": [m.id for m in added_members]
+            "status": "OPEN"
         }
 
-        # Send initial embed inside ticket channel
+        # Embed for Ticket Channel & DM
+        issue_text = self.issue.value
         embed = discord.Embed(
             title=f"🎫 Support Ticket #{ticket_id}",
             description=(
-                f"Hello {interaction.user.mention},\n\n"
-                f"**Issue Description:**\n{self.issue.value}\n\n"
-                f"Support team ({support_role.mention}) will be with you shortly. "
-                f"Use the buttons below to claim or close this ticket."
+                f"**Opened by:** {interaction.user.mention}\n\n"
+                f"**Issue Description:**\n{issue_text}\n\n"
+                f"Support team ({support_role.mention}) will be with you shortly."
             ),
             color=0xFFB703
         )
         embed.set_footer(text="Clouskee Support System")
 
-        ticket_msg = await ticket_channel.send(
+        # 1. Send message inside the created ticket channel
+        await ticket_channel.send(
             content=f"{interaction.user.mention} {support_role.mention}",
             embed=embed,
             view=TicketControlView()
         )
+
+        # 2. Send DM to the ticket opener and all members having the support role
+        dm_embed = discord.Embed(
+            title=f"🎫 New Support Ticket Opened [#{ticket_id}]",
+            description=(
+                f"**Server:** {guild.name}\n"
+                f"**Opened by:** {interaction.user.mention} (`{interaction.user}`)\n\n"
+                f"**Issue:**\n{issue_text}\n\n"
+                f"Head over to <#{ticket_channel.id}> to respond."
+            ),
+            color=0x00B4D8
+        )
+        dm_embed.set_footer(text="Clouskee Support Notification")
+
+        # DM Ticket Opener
+        try:
+            await interaction.user.send(embed=dm_embed)
+        except discord.Forbidden:
+            pass
+
+        # DM all members having the support role
+        for member in support_role.members:
+            if member.id != interaction.user.id and not member.bot:
+                try:
+                    await member.send(embed=dm_embed)
+                except discord.Forbidden:
+                    pass
 
         # Log ticket creation to DB channel
         db_channel = guild.get_channel(db_channel_id)
@@ -224,7 +231,7 @@ class TicketControlView(discord.ui.View):
         ticket_data["status"] = "CLOSED"
         ticket_data["closed_by"] = interaction.user.id
 
-        # Log close to DB
+        # Log close to DB including who closed it
         config = bot.configs.get(guild_id, {})
         db_channel = interaction.guild.get_channel(config.get("db_channel_id"))
         if db_channel:
@@ -236,7 +243,7 @@ class TicketControlView(discord.ui.View):
             }
             await db_channel.send(f"```json\n{json.dumps(record)}\n```")
 
-        # Send DM to ticket opener and participants
+        # Send DM to ticket opener
         close_notice = discord.Embed(
             title="🔒 Support Ticket Closed",
             description=(
@@ -246,13 +253,12 @@ class TicketControlView(discord.ui.View):
             color=0xFF3333
         )
 
-        for uid in ticket_data.get("participants", [ticket_data["user_id"]]):
-            member = interaction.guild.get_member(uid)
-            if member:
-                try:
-                    await member.send(embed=close_notice)
-                except discord.Forbidden:
-                    pass
+        opener = interaction.guild.get_member(ticket_data["user_id"])
+        if opener:
+            try:
+                await opener.send(embed=close_notice)
+            except discord.Forbidden:
+                pass
 
         await interaction.response.send_message("🔒 Ticket will be deleted in 5 seconds...", ephemeral=False)
         await asyncio.sleep(5)
