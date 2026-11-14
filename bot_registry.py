@@ -3,5 +3,6 @@
 # =====================================================
 
 ACTIVE_BOTS = [
-    "verify.py",  # ඔයාගේ bot file එකේ නම verify.py නම් මෙන්න මේ විදියට දෙන්න
+    "verify.py",
+    "support-ticket.py",
 ]
