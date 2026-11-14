@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 # Support bot එකට වෙනම token එකක් (SUPPORT_TOKEN) හෝ DISCORD_TOKEN පාවිච්චි කළ හැක
-TOKEN = os.getenv("SUPPORT_TOKEN", os.getenv("DISCORD_TOKEN"))
+TOKEN = os.getenv("SUPPORT_TOKEN", os.getenv("SUPPORT_DISCORD_TOKEN"))
 
 intents = discord.Intents.default()
 intents.members = True
