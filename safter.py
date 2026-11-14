@@ -21,7 +21,6 @@ class ClouskeeSaferBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=intents)
         self.configs = {}
-        # Anti-spam tracker: {user_id: [(message_content, timestamp), ...]}
         self.message_tracker = {}
 
     async def setup_hook(self):
@@ -107,7 +106,7 @@ async def on_message(message: discord.Message):
     if message.author.bot or not message.guild:
         return
 
-    # Server Owner exemption (Owner can bypass all safety checks)
+    # Server Owner exemption
     if message.author.id == message.guild.owner_id:
         return await bot.process_commands(message)
 
@@ -134,23 +133,21 @@ async def on_message(message: discord.Message):
             pass
         return
 
-    # 2. HACKED ACCOUNT / SCAM POST DETECTION (@everyone + attachments/links spam)
+    # 2. HACKED ACCOUNT / SCAM POST DETECTION (@everyone + attachments/links)
     is_everyone = "@everyone" in message.content or "@here" in message.content
     has_attachment = len(message.attachments) > 0
     has_link = "http://" in content_lower or "https://" in content_lower
 
     if is_everyone and (has_attachment or has_link):
-        # Check if the user is rapidly spamming this exact pattern
         user_id = message.author.id
         import time
         current_time = time.time()
         
         bot.message_tracker.setdefault(user_id, [])
-        # Clean history older than 60 seconds
         bot.message_tracker[user_id] = [t for t in bot.message_tracker[user_id] if current_time - t < 60]
         bot.message_tracker[user_id].append(current_time)
 
-        if len(bot.message_tracker[user_id]) >= 2:  # 2 suspicious posts within 1 min
+        if len(bot.message_tracker[user_id]) >= 2:
             try:
                 await message.delete()
             except discord.Forbidden:
@@ -173,12 +170,11 @@ async def on_message(message: discord.Message):
     current_time = time.time()
     bot.message_tracker.setdefault(user_id, [])
     
-    # Check exact message repetition within 10 seconds
     recent_msgs = bot.message_tracker.get(f"content_{user_id}", [])
     recent_msgs = [(msg, t) for msg, t in recent_msgs if current_time - t < 10]
     
     exact_matches = [m for m, t in recent_msgs if m == message.content]
-    if len(exact_matches) >= 2:  # Spammed same message
+    if len(exact_matches) >= 2:
         try:
             await message.delete()
         except discord.Forbidden:
@@ -201,9 +197,8 @@ async def on_message(message: discord.Message):
             if any(app_link.lower() in link.lower() for app_link in approved_links):
                 is_approved = True
                 break
-            # Allow discord invites if needed or block unapproved
             if "discord.gg/" in link or "discord.com/invite/" in link:
-                is_approved = False  # Block external discord server invites unless approved
+                is_approved = False
 
         if not is_approved and links:
             try:
@@ -228,7 +223,7 @@ def is_server_owner(interaction: discord.Interaction) -> bool:
 set_group = app_commands.Group(name="set", description="Clouskee Safer Bot Configuration (Owner Only)")
 
 
-@set_group.command(name="badwords", description="Set prohibited bad words (separated by commas)")
+@set_group.command(name="badwords", description="Add new bad words to the existing list (separated by commas or spaces)")
 @app_commands.describe(words="e.g. word1,word2,word3")
 async def set_badwords(interaction: discord.Interaction, words: str):
     if not is_server_owner(interaction):
@@ -236,12 +231,27 @@ async def set_badwords(interaction: discord.Interaction, words: str):
 
     await interaction.response.defer(ephemeral=True)
     guild_id = interaction.guild.id
-    word_list = [w.strip().lower() for w in words.split(",") if w.strip()]
     
-    bot.configs.setdefault(guild_id, {})["bad_words"] = word_list
+    # Split by comma or space
+    new_words = [w.strip().lower() for w in re.split(r'[, ]+', words) if w.strip()]
+    
+    config = bot.configs.setdefault(guild_id, {})
+    existing_words = config.get("bad_words", [])
+    
+    # Append new words without removing old ones (avoiding duplicates)
+    added_count = 0
+    for w in new_words:
+        if w not in existing_words:
+            existing_words.append(w)
+            added_count += 1
+            
+    config["bad_words"] = existing_words
     await bot.save_config_to_db(interaction.guild)
 
-    await interaction.followup.send(f"✅ Added `{len(word_list)}` bad words to filter and saved to DB!", ephemeral=True)
+    await interaction.followup.send(
+        f"✅ Added `{added_count}` new bad words! Total bad words in filter: **{len(existing_words)}**",
+        ephemeral=True
+    )
 
 
 @set_group.command(name="approvel", description="Add an approved safe link domain")
@@ -255,12 +265,13 @@ async def set_approval(interaction: discord.Interaction, link: str):
     config = bot.configs.setdefault(guild_id, {})
     
     approved = config.get("approved_links", [])
-    if link.strip() not in approved:
-        approved.append(link.strip())
+    link_clean = link.strip()
+    if link_clean not in approved:
+        approved.append(link_clean)
     config["approved_links"] = approved
 
     await bot.save_config_to_db(interaction.guild)
-    await interaction.followup.send(f"✅ Approved link/domain `{link}` added and saved to DB!", ephemeral=True)
+    await interaction.followup.send(f"✅ Approved link/domain `{link_clean}` added and saved to DB!", ephemeral=True)
 
 
 @set_group.command(name="vc", description="Set the 24/7 Voice Channel for the Safer Bot")
@@ -322,7 +333,7 @@ async def set_db(interaction: discord.Interaction, channel: discord.TextChannel)
 
         await interaction.followup.send(
             f"✅ **Safer Database Synced & Restored from {channel.mention}!**\n"
-            f"• **Bad Words Filter:** Active (`{len(config.get('bad_words', []))}` words)\n"
+            f"• **Bad Words Filter:** Active (`{len(config.get('bad_words', []))}` words loaded)\n"
             f"• **Approved Links:** Loaded (`{len(config.get('approved_links', []))}` links)\n"
             f"• **Voice Channel:** Connected automatically",
             ephemeral=True
