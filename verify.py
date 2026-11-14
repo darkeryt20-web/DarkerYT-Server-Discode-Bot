@@ -345,3 +345,9 @@ class ClouskeeBot(commands.Bot):
         new_msg = await verify_channel.send(embed=embed, view=VerifyView())
         config["verify_msg_id"] = new_msg.id
         await self.save_config_to_db(guild)
+bot.tree.add_command(set_group)
+
+if __name__ == "__main__":
+    if not TOKEN:
+        raise ValueError("DISCORD_TOKEN environment variable not found!")
+    bot.run(TOKEN)
