@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-# Intents setup (Members intent is required for auto-role on rejoin)
+# Intents setup
 intents = discord.Intents.default()
 intents.members = True
 intents.guilds = True
@@ -62,7 +62,7 @@ class VerifyView(discord.ui.View):
                 ephemeral=True
             )
 
-        # Save user to DB Channel if not already logged
+        # Save verified user to DB Channel if not already logged
         if interaction.user.id not in bot.verified_users.get(guild_id, set()):
             db_channel = interaction.guild.get_channel(db_channel_id)
             if db_channel:
@@ -92,7 +92,7 @@ class VerifyView(discord.ui.View):
 class ClouskeeBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=intents)
-        self.configs = {}          # {guild_id: {"role_id": int, "vc_id": int, "verify_channel_id": int, "db_channel_id": int, "verify_msg_id": int}}
+        self.configs = {}          # {guild_id: {"role_id": int, "vc_id": int, "verify_channel_id": int, "db_channel_id": int, "verify_msg_id": int, "config_msg_id": int}}
         self.verified_users = {}   # {guild_id: set(user_ids)}
 
     async def setup_hook(self):
@@ -104,6 +104,10 @@ class ClouskeeBot(commands.Bot):
         await self.change_presence(
             activity=discord.Activity(type=discord.ActivityType.watching, name="Clouskee Security 🛡️")
         )
+        
+        # Auto-connect to VC for all guilds if configs are already loaded
+        for guild in self.guilds:
+            await self.ensure_vc_connection(guild)
 
     def build_verify_embed(self, guild: discord.Guild) -> discord.Embed:
         embed = discord.Embed(
@@ -145,7 +149,6 @@ class ClouskeeBot(commands.Bot):
             "verify_msg_id": config.get("verify_msg_id")
         }
 
-        # Update existing CONFIG message or send a new one
         config_msg_id = config.get("config_msg_id")
         content = f"```json\n{json.dumps(payload)}\n```"
 
@@ -189,7 +192,6 @@ class ClouskeeBot(commands.Bot):
         if not verify_channel:
             return
 
-        # Delete old verification message if it exists
         old_msg_id = config.get("verify_msg_id")
         if old_msg_id:
             try:
@@ -198,7 +200,6 @@ class ClouskeeBot(commands.Bot):
             except (discord.NotFound, discord.Forbidden):
                 pass
 
-        # Send fresh verification message
         embed = self.build_verify_embed(guild)
         new_msg = await verify_channel.send(embed=embed, view=VerifyView())
         config["verify_msg_id"] = new_msg.id
@@ -212,7 +213,6 @@ bot = ClouskeeBot()
 
 @bot.event
 async def on_voice_state_update(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
-    # Reconnect immediately if the bot gets kicked, disconnected, or moved
     if member.id == bot.user.id:
         guild = member.guild
         config = bot.configs.get(guild.id, {})
@@ -225,7 +225,6 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
 
 @bot.event
 async def on_member_join(member: discord.Member):
-    # Auto-restore role if user previously verified
     guild = member.guild
     guild_id = guild.id
     if member.id in bot.verified_users.get(guild_id, set()):
@@ -260,7 +259,7 @@ async def set_verify_role(interaction: discord.Interaction, role: discord.Role):
     await bot.save_config_to_db(interaction.guild)
 
     await interaction.response.send_message(
-        f"✅ Verified role set to {role.mention} and synced with DB!",
+        f"✅ Verified role set to {role.mention} and saved to DB!",
         ephemeral=True
     )
 
@@ -277,7 +276,7 @@ async def set_verify_channel(interaction: discord.Interaction, channel: discord.
 
     await bot.refresh_verify_message(interaction.guild)
     await interaction.followup.send(
-        f"✅ Verification embed posted in {channel.mention}!",
+        f"✅ Verification embed posted in {channel.mention} and saved to DB!",
         ephemeral=True
     )
 
@@ -296,7 +295,7 @@ async def set_vc(interaction: discord.Interaction, channel: discord.VoiceChannel
     await bot.ensure_vc_connection(interaction.guild)
 
     await interaction.followup.send(
-        f"🔊 Joined {channel.mention}! Auto-reconnect is active.",
+        f"🔊 Joined {channel.mention}, saved to DB, and auto-reconnect is active!",
         ephemeral=True
     )
 
@@ -349,7 +348,7 @@ async def set_db(interaction: discord.Interaction, channel: discord.TextChannel)
             config["verify_msg_id"] = latest_config["verify_msg_id"]
         config["config_msg_id"] = latest_config_msg_id
 
-        # Delete old verify message & post fresh one, then rejoin VC
+        # Refresh verify embed and connect to VC automatically
         await bot.refresh_verify_message(guild)
         await bot.ensure_vc_connection(guild)
 
@@ -357,7 +356,7 @@ async def set_db(interaction: discord.Interaction, channel: discord.TextChannel)
             f"✅ **Database Synced & Restored from {channel.mention}!**\n"
             f"• **Verified Users Loaded:** `{len(bot.verified_users[guild_id])}`\n"
             f"• **Verify Embed:** Refreshed (Old deleted, new posted)\n"
-            f"• **Voice Channel:** Connected",
+            f"• **Voice Channel:** Connected automatically",
             ephemeral=True
         )
     else:
