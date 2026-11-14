@@ -1,4 +1,5 @@
 import os
+import sys
 import subprocess
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -11,7 +12,6 @@ class CyberpunkDashboardHandler(BaseHTTPRequestHandler):
         self.send_header('Content-type', 'text/html; charset=utf-8')
         self.end_headers()
         
-        # HTML Dashboard design (Clouskee Cyberpunk Theme)
         html_content = f"""
         <!DOCTYPE html>
         <html lang="en">
@@ -41,11 +41,11 @@ class CyberpunkDashboardHandler(BaseHTTPRequestHandler):
                 <div class="status-box">
                     <div class="status-row"><span>System Status:</span> <span class="status-badge">ONLINE</span></div>
                     <div class="status-row"><span>Health Check Port:</span> <b>8000 (Active)</b></div>
-                    <div class="status-row"><span>Environment:</span> <b>Koyeb Cloud Free Tier</b></div>
+                    <div class="status-row"><span>Environment:</span> <b>Koyeb Cloud</b></div>
                 </div>
 
                 <div class="bots-list">
-                    <div style="font-weight: bold; margin-bottom: 8px; color: #ffb703;">🤖 Active Loaded Bots:</div>
+                    <div style="font-weight: bold; margin-bottom: 8px; color: #ffb703;">🤖 Registered Bots:</div>
                     {''.join([f'<div class="bot-item">🟢 {bot}</div>' for bot in ACTIVE_BOTS])}
                 </div>
 
@@ -57,33 +57,25 @@ class CyberpunkDashboardHandler(BaseHTTPRequestHandler):
         self.wfile.write(html_content.encode('utf-8'))
     
     def log_message(self, format, *args):
-        pass  # Clean console output
-
-def run_dashboard():
-    server_address = ('0.0.0.0', 8000)
-    httpd = HTTPServer(server_address, CyberpunkDashboardHandler)
-    print("🌐 Clouskee Cyberpunk Dashboard started on port 8000")
-    httpd.serve_forever()
+        pass
 
 # ==================== MULTI-BOT RUNNER ====================
 def run_bot(bot_filename):
-    print(f"🚀 Launching bot process: {bot_filename}")
-    subprocess.run(["python", bot_filename])
+    print(f"🚀 Launching bot process: {bot_filename}", flush=True)
+    process = subprocess.run([sys.executable, "-u", bot_filename])
+    print(f"⚠️ Bot process {bot_filename} stopped with exit code {process.returncode}", flush=True)
 
 if __name__ == "__main__":
-    # 1. Start Web Dashboard in a background thread (Koyeb Health Check)
-    threading.Thread(target=run_dashboard, daemon=True).start()
-
-    # 2. Start all active bots listed in bot_registry.py as separate threads/processes
-    bot_threads = []
+    # 1. Start all active bots in background threads
     for bot_file in ACTIVE_BOTS:
         if os.path.exists(bot_file):
             t = threading.Thread(target=run_bot, args=(bot_file,), daemon=True)
             t.start()
-            bot_threads.append(t)
         else:
-            print(f"❌ Error: Bot file '{bot_file}' not found in directory!")
+            print(f"❌ Error: Bot file '{bot_file}' not found in directory!", flush=True)
 
-    # Keep main process alive
-    for t in bot_threads:
-        t.join()
+    # 2. Run Web Dashboard in the MAIN thread so the app stays alive 24/7
+    server_address = ('0.0.0.0', 8000)
+    httpd = HTTPServer(server_address, CyberpunkDashboardHandler)
+    print("🌐 Clouskee Cyberpunk Dashboard started on port 8000", flush=True)
+    httpd.serve_forever()
