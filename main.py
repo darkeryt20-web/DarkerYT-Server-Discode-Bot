@@ -1,6 +1,8 @@
 import os
 import json
 import asyncio
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -8,6 +10,26 @@ from dotenv import load_dotenv
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
+
+# ==================== KOYEB HEALTH CHECK SERVER ====================
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Clouskee Bot is alive and running!")
+    
+    def log_message(self, format, *args):
+        # Suppress http server logs to keep console clean
+        pass
+
+def run_health_server():
+    server_address = ('0.0.0.0', 8000)
+    httpd = HTTPServer(server_address, HealthCheckHandler)
+    httpd.serve_forever()
+
+# Start the health check server in a background thread so Koyeb port 8000 passes
+threading.Thread(target=run_health_server, daemon=True).start()
+# ===================================================================
 
 # Intents setup
 intents = discord.Intents.default()
@@ -92,8 +114,8 @@ class VerifyView(discord.ui.View):
 class ClouskeeBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=intents)
-        self.configs = {}          # {guild_id: {"role_id": int, "vc_id": int, "verify_channel_id": int, "db_channel_id": int, "verify_msg_id": int, "config_msg_id": int}}
-        self.verified_users = {}   # {guild_id: set(user_ids)}
+        self.configs = {}          
+        self.verified_users = {}   
 
     async def setup_hook(self):
         self.add_view(VerifyView())
@@ -105,7 +127,6 @@ class ClouskeeBot(commands.Bot):
             activity=discord.Activity(type=discord.ActivityType.watching, name="Clouskee Security 🛡️")
         )
         
-        # Auto-connect to VC for all guilds if configs are already loaded
         for guild in self.guilds:
             await self.ensure_vc_connection(guild)
 
@@ -317,7 +338,6 @@ async def set_db(interaction: discord.Interaction, channel: discord.TextChannel)
     latest_config = None
     latest_config_msg_id = None
 
-    # Read entire DB channel history from oldest to newest
     async for msg in channel.history(limit=None, oldest_first=True):
         if msg.author.id != bot.user.id:
             continue
@@ -337,7 +357,6 @@ async def set_db(interaction: discord.Interaction, channel: discord.TextChannel)
             continue
 
     if latest_config:
-        # Restore saved settings from DB
         if latest_config.get("role_id"):
             config["role_id"] = latest_config["role_id"]
         if latest_config.get("vc_id"):
@@ -348,7 +367,6 @@ async def set_db(interaction: discord.Interaction, channel: discord.TextChannel)
             config["verify_msg_id"] = latest_config["verify_msg_id"]
         config["config_msg_id"] = latest_config_msg_id
 
-        # Refresh verify embed and connect to VC automatically
         await bot.refresh_verify_message(guild)
         await bot.ensure_vc_connection(guild)
 
@@ -360,7 +378,6 @@ async def set_db(interaction: discord.Interaction, channel: discord.TextChannel)
             ephemeral=True
         )
     else:
-        # First time setup: save current config into DB channel
         await bot.save_config_to_db(guild)
         await interaction.followup.send(
             f"✅ **Database Initialized in {channel.mention}!**\n"
