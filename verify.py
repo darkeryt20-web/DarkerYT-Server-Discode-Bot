@@ -1,8 +1,33 @@
+import os
 import json
 import asyncio
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import discord
 from discord import app_commands
 from discord.ext import commands
+from dotenv import load_dotenv
+
+load_dotenv()
+TOKEN = os.getenv("DISCORD_TOKEN")
+
+# ==================== KOYEB HEALTH CHECK SERVER ====================
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Clouskee Bot is alive and running!")
+    
+    def log_message(self, format, *args):
+        pass
+
+def run_health_server():
+    server_address = ('0.0.0.0', 8000)
+    httpd = HTTPServer(server_address, HealthCheckHandler)
+    httpd.serve_forever()
+
+threading.Thread(target=run_health_server, daemon=True).start()
+# ===================================================================
 
 intents = discord.Intents.default()
 intents.members = True
@@ -81,144 +106,14 @@ class VerifyView(discord.ui.View):
         await interaction.response.send_message(embed=after_embed, ephemeral=True)
 
 
-def is_server_owner(interaction: discord.Interaction) -> bool:
-    return interaction.guild is not None and interaction.user.id == interaction.guild.owner_id
-
-
-set_group = app_commands.Group(name="set", description="Clouskee Verification & System Configuration (Owner Only)")
-verify_sub = app_commands.Group(name="verify", description="Configure verification settings", parent=set_group)
-
-
-@verify_sub.command(name="role", description="Set the role given to users after verification")
-@app_commands.describe(role="Select the verified member role")
-async def set_verify_role(interaction: discord.Interaction, role: discord.Role):
-    if not is_server_owner(interaction):
-        return await interaction.response.send_message("⛔ **Access Denied:** Only the Server Owner can use this command.", ephemeral=True)
-
-    bot: ClouskeeBot = interaction.client
-    guild_id = interaction.guild.id
-    bot.configs.setdefault(guild_id, {})["role_id"] = role.id
-    await bot.save_config_to_db(interaction.guild)
-
-    await interaction.response.send_message(
-        f"✅ Verified role set to {role.mention} and saved to DB!",
-        ephemeral=True
-    )
-
-
-@verify_sub.command(name="channel", description="Set the channel where the verification panel will be posted")
-@app_commands.describe(channel="Select the verification text channel")
-async def set_verify_channel(interaction: discord.Interaction, channel: discord.TextChannel):
-    if not is_server_owner(interaction):
-        return await interaction.response.send_message("⛔ **Access Denied:** Only the Server Owner can use this command.", ephemeral=True)
-
-    await interaction.response.defer(ephemeral=True)
-    bot: ClouskeeBot = interaction.client
-    guild_id = interaction.guild.id
-    bot.configs.setdefault(guild_id, {})["verify_channel_id"] = channel.id
-
-    await bot.refresh_verify_message(interaction.guild)
-    await interaction.followup.send(
-        f"✅ Verification embed posted in {channel.mention} and saved to DB!",
-        ephemeral=True
-    )
-
-
-@set_group.command(name="vc", description="Set the 24/7 Voice Channel for the bot")
-@app_commands.describe(channel="Select the voice channel")
-async def set_vc(interaction: discord.Interaction, channel: discord.VoiceChannel):
-    if not is_server_owner(interaction):
-        return await interaction.response.send_message("⛔ **Access Denied:** Only the Server Owner can use this command.", ephemeral=True)
-
-    await interaction.response.defer(ephemeral=True)
-    bot: ClouskeeBot = interaction.client
-    guild_id = interaction.guild.id
-    bot.configs.setdefault(guild_id, {})["vc_id"] = channel.id
-
-    await bot.save_config_to_db(interaction.guild)
-    await bot.ensure_vc_connection(interaction.guild)
-
-    await interaction.followup.send(
-        f"🔊 Joined {channel.mention}, saved to DB, and auto-reconnect is active!",
-        ephemeral=True
-    )
-
-
-@set_group.command(name="db", description="Set the Database channel & restore all saved data/messages")
-@app_commands.describe(channel="Select the private DB text channel")
-async def set_db(interaction: discord.Interaction, channel: discord.TextChannel):
-    if not is_server_owner(interaction):
-        return await interaction.response.send_message("⛔ **Access Denied:** Only the Server Owner can use this command.", ephemeral=True)
-
-    await interaction.response.defer(ephemeral=True)
-    bot: ClouskeeBot = interaction.client
-    guild = interaction.guild
-    guild_id = guild.id
-
-    config = bot.configs.setdefault(guild_id, {})
-    config["db_channel_id"] = channel.id
-    bot.verified_users[guild_id] = set()
-
-    latest_config = None
-    latest_config_msg_id = None
-
-    async for msg in channel.history(limit=None, oldest_first=True):
-        if msg.author.id != bot.user.id:
-            continue
-        raw = msg.content.strip()
-        if raw.startswith("```json") and raw.endswith("```"):
-            raw = raw[7:-3].strip()
-        try:
-            data = json.loads(raw)
-            if data.get("type") == "CONFIG":
-                latest_config = data
-                latest_config_msg_id = msg.id
-            elif data.get("type") == "VERIFIED_USER":
-                uid = data.get("user_id")
-                if uid:
-                    bot.verified_users[guild_id].add(int(uid))
-        except json.JSONDecodeError:
-            continue
-
-    if latest_config:
-        if latest_config.get("role_id"):
-            config["role_id"] = latest_config["role_id"]
-        if latest_config.get("vc_id"):
-            config["vc_id"] = latest_config["vc_id"]
-        if latest_config.get("verify_channel_id"):
-            config["verify_channel_id"] = latest_config["verify_channel_id"]
-        if latest_config.get("verify_msg_id"):
-            config["verify_msg_id"] = latest_config["verify_msg_id"]
-        config["config_msg_id"] = latest_config_msg_id
-
-        await bot.refresh_verify_message(guild)
-        await bot.ensure_vc_connection(guild)
-
-        await interaction.followup.send(
-            f"✅ **Database Synced & Restored from {channel.mention}!**\n"
-            f"• **Verified Users Loaded:** `{len(bot.verified_users[guild_id])}`\n"
-            f"• **Verify Embed:** Refreshed (Old deleted, new posted)\n"
-            f"• **Voice Channel:** Connected automatically",
-            ephemeral=True
-        )
-    else:
-        await bot.save_config_to_db(guild)
-        await interaction.followup.send(
-            f"✅ **Database Initialized in {channel.mention}!**\n"
-            f"Now set your role, channel, and VC using `/set verify role`, `/set verify channel`, and `/set vc`.",
-            ephemeral=True
-        )
-
-
 class ClouskeeBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=intents)
-        self.configs = {}
-        self.verified_users = {}
+        self.configs = {}          
+        self.verified_users = {}   
 
     async def setup_hook(self):
         self.add_view(VerifyView())
-        self.tree.add_command(set_group)
         await self.tree.sync()
 
     async def on_ready(self):
@@ -226,29 +121,6 @@ class ClouskeeBot(commands.Bot):
         await self.change_presence(
             activity=discord.Activity(type=discord.ActivityType.watching, name="Clouskee Security 🛡️")
         )
-
-    async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
-        if member.id == self.user.id:
-            guild = member.guild
-            config = self.configs.get(guild.id, {})
-            target_vc_id = config.get("vc_id")
-
-            if target_vc_id and (after.channel is None or after.channel.id != target_vc_id):
-                await asyncio.sleep(2)
-                await self.ensure_vc_connection(guild)
-
-    async def on_member_join(self, member: discord.Member):
-        guild = member.guild
-        guild_id = guild.id
-        if member.id in self.verified_users.get(guild_id, set()):
-            role_id = self.configs.get(guild_id, {}).get("role_id")
-            if role_id:
-                role = guild.get_role(role_id)
-                if role:
-                    try:
-                        await member.add_roles(role, reason="Clouskee DB Auto-Restore on Rejoin")
-                    except discord.Forbidden:
-                        pass
 
     def build_verify_embed(self, guild: discord.Guild) -> discord.Embed:
         embed = discord.Embed(
@@ -308,20 +180,25 @@ class ClouskeeBot(commands.Bot):
         config = self.configs.get(guild.id, {})
         vc_id = config.get("vc_id")
         if not vc_id:
+            print(f"[VC Debug] No VC ID found in config for guild {guild.name}")
             return
 
         vc_channel = guild.get_channel(vc_id)
         if not vc_channel or not isinstance(vc_channel, discord.VoiceChannel):
+            print(f"[VC Debug] Voice channel with ID {vc_id} not found or invalid!")
             return
 
         voice_client = guild.voice_client
         try:
             if voice_client is None:
+                print(f"[VC Debug] Connecting to voice channel: {vc_channel.name}")
                 await vc_channel.connect(self_deaf=True)
+                print(f"[VC Debug] Successfully connected to {vc_channel.name}!")
             elif voice_client.channel.id != vc_id:
+                print(f"[VC Debug] Moving to voice channel: {vc_channel.name}")
                 await voice_client.move_to(vc_channel)
         except Exception as e:
-            print(f"❌ [VC Error] Could not join VC in {guild.name}: {e}")
+            print(f"❌ [VC Error Detail] Could not join VC in {guild.name}: {e}")
 
     async def refresh_verify_message(self, guild: discord.Guild):
         config = self.configs.get(guild.id, {})
@@ -345,6 +222,167 @@ class ClouskeeBot(commands.Bot):
         new_msg = await verify_channel.send(embed=embed, view=VerifyView())
         config["verify_msg_id"] = new_msg.id
         await self.save_config_to_db(guild)
+
+
+bot = ClouskeeBot()
+
+
+# ==================== EVENTS ====================
+
+@bot.event
+async def on_voice_state_update(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+    if member.id == bot.user.id:
+        guild = member.guild
+        config = bot.configs.get(guild.id, {})
+        target_vc_id = config.get("vc_id")
+
+        if target_vc_id and (after.channel is None or after.channel.id != target_vc_id):
+            await asyncio.sleep(2)
+            await bot.ensure_vc_connection(guild)
+
+
+@bot.event
+async def on_member_join(member: discord.Member):
+    guild = member.guild
+    guild_id = guild.id
+    if member.id in bot.verified_users.get(guild_id, set()):
+        role_id = bot.configs.get(guild_id, {}).get("role_id")
+        if role_id:
+            role = guild.get_role(role_id)
+            if role:
+                try:
+                    await member.add_roles(role, reason="Clouskee DB Auto-Restore on Rejoin")
+                except discord.Forbidden:
+                    pass
+
+
+# ==================== SLASH COMMANDS (OWNER ONLY) ====================
+
+def is_server_owner(interaction: discord.Interaction) -> bool:
+    return interaction.guild is not None and interaction.user.id == interaction.guild.owner_id
+
+
+set_group = app_commands.Group(name="set", description="Clouskee Verification & System Configuration (Owner Only)")
+verify_sub = app_commands.Group(name="verify", description="Configure verification settings", parent=set_group)
+
+
+@verify_sub.command(name="role", description="Set the role given to users after verification")
+@app_commands.describe(role="Select the verified member role")
+async def set_verify_role(interaction: discord.Interaction, role: discord.Role):
+    if not is_server_owner(interaction):
+        return await interaction.response.send_message("⛔ **Access Denied:** Only the Server Owner can use this command.", ephemeral=True)
+
+    guild_id = interaction.guild.id
+    bot.configs.setdefault(guild_id, {})["role_id"] = role.id
+    await bot.save_config_to_db(interaction.guild)
+
+    await interaction.response.send_message(
+        f"✅ Verified role set to {role.mention} and saved to DB!",
+        ephemeral=True
+    )
+
+
+@verify_sub.command(name="channel", description="Set the channel where the verification panel will be posted")
+@app_commands.describe(channel="Select the verification text channel")
+async def set_verify_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+    if not is_server_owner(interaction):
+        return await interaction.response.send_message("⛔ **Access Denied:** Only the Server Owner can use this command.", ephemeral=True)
+
+    await interaction.response.defer(ephemeral=True)
+    guild_id = interaction.guild.id
+    bot.configs.setdefault(guild_id, {})["verify_channel_id"] = channel.id
+
+    await bot.refresh_verify_message(interaction.guild)
+    await interaction.followup.send(
+        f"✅ Verification embed posted in {channel.mention} and saved to DB!",
+        ephemeral=True
+    )
+
+
+@set_group.command(name="vc", description="Set the 24/7 Voice Channel for the bot")
+@app_commands.describe(channel="Select the voice channel")
+async def set_vc(interaction: discord.Interaction, channel: discord.VoiceChannel):
+    if not is_server_owner(interaction):
+        return await interaction.response.send_message("⛔ **Access Denied:** Only the Server Owner can use this command.", ephemeral=True)
+
+    await interaction.response.defer(ephemeral=True)
+    guild_id = interaction.guild.id
+    bot.configs.setdefault(guild_id, {})["vc_id"] = channel.id
+
+    await bot.save_config_to_db(interaction.guild)
+    await bot.ensure_vc_connection(interaction.guild)
+
+    await interaction.followup.send(
+        f"🔊 Joined {channel.mention}, saved to DB, and auto-reconnect is active!",
+        ephemeral=True
+    )
+
+
+@set_group.command(name="db", description="Set the Database channel & restore all saved data/messages")
+@app_commands.describe(channel="Select the private DB text channel")
+async def set_db(interaction: discord.Interaction, channel: discord.TextChannel):
+    if not is_server_owner(interaction):
+        return await interaction.response.send_message("⛔ **Access Denied:** Only the Server Owner can use this command.", ephemeral=True)
+
+    await interaction.response.defer(ephemeral=True)
+    guild = interaction.guild
+    guild_id = guild.id
+
+    config = bot.configs.setdefault(guild_id, {})
+    config["db_channel_id"] = channel.id
+    bot.verified_users[guild_id] = set()
+
+    latest_config = None
+    latest_config_msg_id = None
+
+    async for msg in channel.history(limit=None, oldest_first=True):
+        if msg.author.id != bot.user.id:
+            continue
+        raw = msg.content.strip()
+        if raw.startswith("```json") and raw.endswith("```"):
+            raw = raw[7:-3].strip()
+        try:
+            data = json.loads(raw)
+            if data.get("type") == "CONFIG":
+                latest_config = data
+                latest_config_msg_id = msg.id
+            elif data.get("type") == "VERIFIED_USER":
+                uid = data.get("user_id")
+                if uid:
+                    bot.verified_users[guild_id].add(int(uid))
+        except json.JSONDecodeError:
+            continue
+
+    if latest_config:
+        if latest_config.get("role_id"):
+            config["role_id"] = latest_config["role_id"]
+        if latest_config.get("vc_id"):
+            config["vc_id"] = latest_config["vc_id"]
+        if latest_config.get("verify_channel_id"):
+            config["verify_channel_id"] = latest_config["verify_channel_id"]
+        if latest_config.get("verify_msg_id"):
+            config["verify_msg_id"] = latest_config["verify_msg_id"]
+        config["config_msg_id"] = latest_config_msg_id
+
+        await bot.refresh_verify_message(guild)
+        await bot.ensure_vc_connection(guild)
+
+        await interaction.followup.send(
+            f"✅ **Database Synced & Restored from {channel.mention}!**\n"
+            f"• **Verified Users Loaded:** `{len(bot.verified_users[guild_id])}`\n"
+            f"• **Verify Embed:** Refreshed (Old deleted, new posted)\n"
+            f"• **Voice Channel:** Connected automatically",
+            ephemeral=True
+        )
+    else:
+        await bot.save_config_to_db(guild)
+        await interaction.followup.send(
+            f"✅ **Database Initialized in {channel.mention}!**\n"
+            f"Now set your role, channel, and VC using `/set verify role`, `/set verify channel`, and `/set vc`.",
+            ephemeral=True
+        )
+
+
 bot.tree.add_command(set_group)
 
 if __name__ == "__main__":
