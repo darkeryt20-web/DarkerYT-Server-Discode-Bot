@@ -1,394 +1,270 @@
 import os
-import json
-import asyncio
+import time
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import discord
-from discord import app_commands
-from discord.ext import commands
+import asyncio
+from aiohttp import web
 from dotenv import load_dotenv
+from bot import ClouskeeBot
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-# ==================== KOYEB HEALTH CHECK SERVER ====================
-class HealthCheckHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Clouskee Bot is alive and running!")
-    
-    def log_message(self, format, *args):
-        # Suppress http server logs to keep console clean
-        pass
-
-def run_health_server():
-    server_address = ('0.0.0.0', 8000)
-    httpd = HTTPServer(server_address, HealthCheckHandler)
-    httpd.serve_forever()
-
-# Start the health check server in a background thread so Koyeb port 8000 passes
-threading.Thread(target=run_health_server, daemon=True).start()
-# ===================================================================
-
-# Intents setup
-intents = discord.Intents.default()
-intents.members = True
-intents.guilds = True
-intents.voice_states = True
-intents.message_content = True
-
-
-class VerifyView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(
-        label="Start Verification",
-        style=discord.ButtonStyle.success,
-        emoji="🛡️",
-        custom_id="clouskee_verify_btn"
-    )
-    async def verify_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        bot: ClouskeeBot = interaction.client
-        guild_id = interaction.guild.id
-        config = bot.configs.get(guild_id, {})
-
-        role_id = config.get("role_id")
-        db_channel_id = config.get("db_channel_id")
-
-        if not role_id or not db_channel_id:
-            return await interaction.response.send_message(
-                "⚠️ Verification system is not fully configured yet. Please contact the Server Owner.",
-                ephemeral=True
-            )
-
-        role = interaction.guild.get_role(role_id)
-        if not role:
-            return await interaction.response.send_message(
-                "⚠️ Verified role not found! Please contact an admin.",
-                ephemeral=True
-            )
-
-        if role in interaction.user.roles:
-            return await interaction.response.send_message(
-                "✅ **You are already verified in Clouskee!**",
-                ephemeral=True
-            )
-
-        try:
-            await interaction.user.add_roles(role, reason="Clouskee Verification System")
-        except discord.Forbidden:
-            return await interaction.response.send_message(
-                "❌ Bot doesn't have permission to assign the role. Move the bot's role above the verified role!",
-                ephemeral=True
-            )
-
-        # Save verified user to DB Channel if not already logged
-        if interaction.user.id not in bot.verified_users.get(guild_id, set()):
-            db_channel = interaction.guild.get_channel(db_channel_id)
-            if db_channel:
-                user_record = {
-                    "type": "VERIFIED_USER",
-                    "user_id": interaction.user.id,
-                    "username": str(interaction.user)
-                }
-                await db_channel.send(f"```json\n{json.dumps(user_record)}\n```")
-                bot.verified_users.setdefault(guild_id, set()).add(interaction.user.id)
-
-        # Verify After Message (Ephemeral)
-        after_embed = discord.Embed(
-            title="🎉 Verification Successful!",
-            description=(
-                f"Welcome to **Clouskee**, {interaction.user.mention}!\n\n"
-                f"🔓 **Unlocked:** Full community access, premium cheats & tools channels, and support tickets.\n"
-                f"📌 **Assigned Role:** {role.mention}\n\n"
-                f"*Enjoy your stay and follow the server rules!*"
-            ),
-            color=0x00FF88
-        )
-        after_embed.set_footer(text="Developed By Clouskee • Security System")
-        await interaction.response.send_message(embed=after_embed, ephemeral=True)
-
-
-class ClouskeeBot(commands.Bot):
-    def __init__(self):
-        super().__init__(command_prefix="!", intents=intents)
-        self.configs = {}          
-        self.verified_users = {}   
-
-    async def setup_hook(self):
-        self.add_view(VerifyView())
-        await self.tree.sync()
-
-    async def on_ready(self):
-        print(f"✅ Logged in as {self.user} (ID: {self.user.id})")
-        await self.change_presence(
-            activity=discord.Activity(type=discord.ActivityType.watching, name="Clouskee Security 🛡️")
-        )
-        
-        for guild in self.guilds:
-            await self.ensure_vc_connection(guild)
-
-    def build_verify_embed(self, guild: discord.Guild) -> discord.Embed:
-        embed = discord.Embed(
-            title="🛡️ Welcome to Clouskee",
-            description=(
-                "Welcome to the official **Clouskee** Discord Server! Your premier destination for "
-                "exclusive **Game Cheats**, **Custom Tools**, **Scripts**, and a thriving gaming community.\n\n"
-                "To unlock full access to our cheats, channels, and open **support tickets**, "
-                "please click the **Start Verification** button below to verify your account."
-            ),
-            color=0xFF6B00
-        )
-        if guild.icon:
-            embed.set_thumbnail(url=guild.icon.url)
-        embed.add_field(
-            name="⚡ Instant Access",
-            value="Click the green button below to get your member role immediately.",
-            inline=False
-        )
-        embed.set_footer(text="Developed By Clouskee")
-        return embed
-
-    async def save_config_to_db(self, guild: discord.Guild):
-        guild_id = guild.id
-        config = self.configs.get(guild_id, {})
-        db_channel_id = config.get("db_channel_id")
-        if not db_channel_id:
-            return
-
-        db_channel = guild.get_channel(db_channel_id)
-        if not db_channel:
-            return
-
-        payload = {
-            "type": "CONFIG",
-            "role_id": config.get("role_id"),
-            "vc_id": config.get("vc_id"),
-            "verify_channel_id": config.get("verify_channel_id"),
-            "verify_msg_id": config.get("verify_msg_id")
-        }
-
-        config_msg_id = config.get("config_msg_id")
-        content = f"```json\n{json.dumps(payload)}\n```"
-
-        if config_msg_id:
-            try:
-                msg = await db_channel.fetch_message(config_msg_id)
-                await msg.edit(content=content)
-                return
-            except discord.NotFound:
-                pass
-
-        new_msg = await db_channel.send(content)
-        config["config_msg_id"] = new_msg.id
-
-    async def ensure_vc_connection(self, guild: discord.Guild):
-        config = self.configs.get(guild.id, {})
-        vc_id = config.get("vc_id")
-        if not vc_id:
-            return
-
-        vc_channel = guild.get_channel(vc_id)
-        if not vc_channel or not isinstance(vc_channel, discord.VoiceChannel):
-            return
-
-        voice_client = guild.voice_client
-        try:
-            if voice_client is None:
-                await vc_channel.connect(self_deaf=True)
-            elif voice_client.channel.id != vc_id:
-                await voice_client.move_to(vc_channel)
-        except Exception as e:
-            print(f"[VC Error] Could not join VC in {guild.name}: {e}")
-
-    async def refresh_verify_message(self, guild: discord.Guild):
-        config = self.configs.get(guild.id, {})
-        verify_ch_id = config.get("verify_channel_id")
-        if not verify_ch_id:
-            return
-
-        verify_channel = guild.get_channel(verify_ch_id)
-        if not verify_channel:
-            return
-
-        old_msg_id = config.get("verify_msg_id")
-        if old_msg_id:
-            try:
-                old_msg = await verify_channel.fetch_message(old_msg_id)
-                await old_msg.delete()
-            except (discord.NotFound, discord.Forbidden):
-                pass
-
-        embed = self.build_verify_embed(guild)
-        new_msg = await verify_channel.send(embed=embed, view=VerifyView())
-        config["verify_msg_id"] = new_msg.id
-        await self.save_config_to_db(guild)
-
-
+START_TIME = time.time()
 bot = ClouskeeBot()
 
 
-# ==================== EVENTS ====================
-
-@bot.event
-async def on_voice_state_update(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
-    if member.id == bot.user.id:
-        guild = member.guild
-        config = bot.configs.get(guild.id, {})
-        target_vc_id = config.get("vc_id")
-
-        if target_vc_id and (after.channel is None or after.channel.id != target_vc_id):
-            await asyncio.sleep(2)
-            await bot.ensure_vc_connection(guild)
+def format_uptime(seconds: float) -> str:
+    mins, sec = divmod(int(seconds), 60)
+    hours, mins = divmod(mins, 60)
+    days, hours = divmod(hours, 24)
+    if days > 0:
+        return f"{days}d {hours}h {mins}m {sec}s"
+    return f"{hours}h {mins}m {sec}s"
 
 
-@bot.event
-async def on_member_join(member: discord.Member):
-    guild = member.guild
-    guild_id = guild.id
-    if member.id in bot.verified_users.get(guild_id, set()):
-        role_id = bot.configs.get(guild_id, {}).get("role_id")
-        if role_id:
-            role = guild.get_role(role_id)
-            if role:
-                try:
-                    await member.add_roles(role, reason="Clouskee DB Auto-Restore on Rejoin")
-                except discord.Forbidden:
-                    pass
+def get_bot_stats() -> dict:
+    is_online = bot.is_ready() and not bot.is_closed()
+    latency = round(bot.latency * 1000) if is_online and bot.latency == bot.latency else 0
+
+    total_verified = sum(len(users) for users in bot.verified_users.values())
+    connected_vcs = []
+    for guild in bot.guilds:
+        if guild.voice_client and guild.voice_client.channel:
+            connected_vcs.append(f"{guild.voice_client.channel.name}")
+
+    return {
+        "status": "ONLINE" if is_online else "STARTING",
+        "bot_name": str(bot.user) if bot.user else "Clouskee Security",
+        "ping_ms": latency,
+        "uptime": format_uptime(time.time() - START_TIME),
+        "verified_users": total_verified,
+        "servers": len(bot.guilds),
+        "voice_channel": ", ".join(connected_vcs) if connected_vcs else "Not Connected",
+        "port": 8000
+    }
 
 
-# ==================== SLASH COMMANDS (OWNER ONLY) ====================
+DASHBOARD_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clouskee Security • Live Node Status</title>
+    <style>
+        :root {
+            --bg: #090a0f;
+            --card: rgba(18, 20, 29, 0.85);
+            --border: rgba(255, 166, 0, 0.25);
+            --accent: #ff9900;
+            --accent-glow: rgba(255, 153, 0, 0.35);
+            --green: #00ff88;
+            --green-glow: rgba(0, 255, 136, 0.25);
+            --text: #f3f4f6;
+            --muted: #9ca3af;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
+        body {
+            background: radial-gradient(circle at top right, #1a150e, var(--bg) 55%);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            width: 100%;
+            max-width: 780px;
+            background: var(--card);
+            backdrop-filter: blur(14px);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 32px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.7), 0 0 30px rgba(255, 153, 0, 0.08);
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            padding-bottom: 20px;
+            margin-bottom: 26px;
+        }
+        .brand h1 {
+            font-size: 1.65rem;
+            letter-spacing: 0.5px;
+            background: linear-gradient(90deg, #ffbb00, #ff6b00);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .brand p { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(0, 255, 136, 0.1);
+            border: 1px solid var(--green);
+            color: var(--green);
+            padding: 8px 18px;
+            border-radius: 999px;
+            font-weight: 700;
+            font-size: 0.9rem;
+            box-shadow: 0 0 18px var(--green-glow);
+        }
+        .dot {
+            width: 10px;
+            height: 10px;
+            background: var(--green);
+            border-radius: 50%;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 255, 136, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(0, 255, 136, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 255, 136, 0); }
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 16px;
+        }
+        .stat-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 12px;
+            padding: 18px;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+        .stat-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--accent);
+        }
+        .stat-label { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.8px; }
+        .stat-value { font-size: 1.35rem; font-weight: 700; margin-top: 8px; color: #fff; }
+        .highlight { color: var(--accent); }
+        .port-box {
+            margin-top: 22px;
+            background: rgba(255, 153, 0, 0.07);
+            border: 1px dashed var(--border);
+            border-radius: 12px;
+            padding: 14px 18px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            font-size: 0.9rem;
+        }
+        .port-box code {
+            background: rgba(0,0,0,0.5);
+            padding: 4px 10px;
+            border-radius: 6px;
+            color: var(--accent);
+            font-family: monospace;
+        }
+        .footer {
+            margin-top: 24px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 0.82rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="brand">
+                <h1>🛡️ CLOUSKEE SECURITY</h1>
+                <p id="bot-name">Initializing Node...</p>
+            </div>
+            <div class="status-badge">
+                <span class="dot"></span>
+                <span id="status-text">ONLINE</span>
+            </div>
+        </div>
 
-def is_server_owner(interaction: discord.Interaction) -> bool:
-    return interaction.guild is not None and interaction.user.id == interaction.guild.owner_id
+        <div class="grid">
+            <div class="stat-card">
+                <div class="stat-label">Gateway Latency</div>
+                <div class="stat-value highlight" id="ping">-- ms</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">System Uptime</div>
+                <div class="stat-value" id="uptime">--</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Verified Members</div>
+                <div class="stat-value highlight" id="verified">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">24/7 Voice Channel</div>
+                <div class="stat-value" id="vc" style="font-size: 1.05rem;">--</div>
+            </div>
+        </div>
+
+        <div class="port-box">
+            <span>🌐 <strong>Active Health Port:</strong> <code id="port-num">0.0.0.0:8000</code></span>
+            <span>🔗 <strong>Endpoint:</strong> <code id="host-url">/api/status</code></span>
+        </div>
+
+        <div class="footer">
+            Developed By Clouskee • Auto-syncing live telemetry every 5 seconds
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('host-url').textContent = window.location.origin + '/api/status';
+
+        async function updateStats() {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+                document.getElementById('status-text').textContent = data.status;
+                document.getElementById('bot-name').textContent = data.bot_name + ' • Koyeb Cloud Instance';
+                document.getElementById('ping').textContent = data.ping_ms + ' ms';
+                document.getElementById('uptime').textContent = data.uptime;
+                document.getElementById('verified').textContent = data.verified_users;
+                document.getElementById('vc').textContent = data.voice_channel;
+                document.getElementById('port-num').textContent = '0.0.0.0:' + data.port;
+            } catch (e) {
+                document.getElementById('status-text').textContent = 'RECONNECTING';
+            }
+        }
+        updateStats();
+        setInterval(updateStats, 5000);
+    </script>
+</body>
+</html>
+"""
 
 
-set_group = app_commands.Group(name="set", description="Clouskee Verification & System Configuration (Owner Only)")
-verify_sub = app_commands.Group(name="verify", description="Configure verification settings", parent=set_group)
+async def handle_dashboard(request):
+    return web.Response(text=DASHBOARD_HTML, content_type="text/html")
 
 
-@verify_sub.command(name="role", description="Set the role given to users after verification")
-@app_commands.describe(role="Select the verified member role")
-async def set_verify_role(interaction: discord.Interaction, role: discord.Role):
-    if not is_server_owner(interaction):
-        return await interaction.response.send_message("⛔ **Access Denied:** Only the Server Owner can use this command.", ephemeral=True)
-
-    guild_id = interaction.guild.id
-    bot.configs.setdefault(guild_id, {})["role_id"] = role.id
-    await bot.save_config_to_db(interaction.guild)
-
-    await interaction.response.send_message(
-        f"✅ Verified role set to {role.mention} and saved to DB!",
-        ephemeral=True
-    )
+async def handle_api_status(request):
+    return web.json_response(get_bot_stats())
 
 
-@verify_sub.command(name="channel", description="Set the channel where the verification panel will be posted")
-@app_commands.describe(channel="Select the verification text channel")
-async def set_verify_channel(interaction: discord.Interaction, channel: discord.TextChannel):
-    if not is_server_owner(interaction):
-        return await interaction.response.send_message("⛔ **Access Denied:** Only the Server Owner can use this command.", ephemeral=True)
+async def start_services():
+    # 1. Start Web Dashboard & Koyeb Health Check on Port 8000
+    app = web.Application()
+    app.router.add_get("/", handle_dashboard)
+    app.router.add_get("/api/status", handle_api_status)
 
-    await interaction.response.defer(ephemeral=True)
-    guild_id = interaction.guild.id
-    bot.configs.setdefault(guild_id, {})["verify_channel_id"] = channel.id
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", 8000)
+    await site.start()
+    print("🌐 Dashboard & Health Check running on http://0.0.0.0:8000")
 
-    await bot.refresh_verify_message(interaction.guild)
-    await interaction.followup.send(
-        f"✅ Verification embed posted in {channel.mention} and saved to DB!",
-        ephemeral=True
-    )
-
-
-@set_group.command(name="vc", description="Set the 24/7 Voice Channel for the bot")
-@app_commands.describe(channel="Select the voice channel")
-async def set_vc(interaction: discord.Interaction, channel: discord.VoiceChannel):
-    if not is_server_owner(interaction):
-        return await interaction.response.send_message("⛔ **Access Denied:** Only the Server Owner can use this command.", ephemeral=True)
-
-    await interaction.response.defer(ephemeral=True)
-    guild_id = interaction.guild.id
-    bot.configs.setdefault(guild_id, {})["vc_id"] = channel.id
-
-    await bot.save_config_to_db(interaction.guild)
-    await bot.ensure_vc_connection(interaction.guild)
-
-    await interaction.followup.send(
-        f"🔊 Joined {channel.mention}, saved to DB, and auto-reconnect is active!",
-        ephemeral=True
-    )
-
-
-@set_group.command(name="db", description="Set the Database channel & restore all saved data/messages")
-@app_commands.describe(channel="Select the private DB text channel")
-async def set_db(interaction: discord.Interaction, channel: discord.TextChannel):
-    if not is_server_owner(interaction):
-        return await interaction.response.send_message("⛔ **Access Denied:** Only the Server Owner can use this command.", ephemeral=True)
-
-    await interaction.response.defer(ephemeral=True)
-    guild = interaction.guild
-    guild_id = guild.id
-
-    config = bot.configs.setdefault(guild_id, {})
-    config["db_channel_id"] = channel.id
-    bot.verified_users[guild_id] = set()
-
-    latest_config = None
-    latest_config_msg_id = None
-
-    async for msg in channel.history(limit=None, oldest_first=True):
-        if msg.author.id != bot.user.id:
-            continue
-        raw = msg.content.strip()
-        if raw.startswith("```json") and raw.endswith("```"):
-            raw = raw[7:-3].strip()
-        try:
-            data = json.loads(raw)
-            if data.get("type") == "CONFIG":
-                latest_config = data
-                latest_config_msg_id = msg.id
-            elif data.get("type") == "VERIFIED_USER":
-                uid = data.get("user_id")
-                if uid:
-                    bot.verified_users[guild_id].add(int(uid))
-        except json.JSONDecodeError:
-            continue
-
-    if latest_config:
-        if latest_config.get("role_id"):
-            config["role_id"] = latest_config["role_id"]
-        if latest_config.get("vc_id"):
-            config["vc_id"] = latest_config["vc_id"]
-        if latest_config.get("verify_channel_id"):
-            config["verify_channel_id"] = latest_config["verify_channel_id"]
-        if latest_config.get("verify_msg_id"):
-            config["verify_msg_id"] = latest_config["verify_msg_id"]
-        config["config_msg_id"] = latest_config_msg_id
-
-        await bot.refresh_verify_message(guild)
-        await bot.ensure_vc_connection(guild)
-
-        await interaction.followup.send(
-            f"✅ **Database Synced & Restored from {channel.mention}!**\n"
-            f"• **Verified Users Loaded:** `{len(bot.verified_users[guild_id])}`\n"
-            f"• **Verify Embed:** Refreshed (Old deleted, new posted)\n"
-            f"• **Voice Channel:** Connected automatically",
-            ephemeral=True
-        )
-    else:
-        await bot.save_config_to_db(guild)
-        await interaction.followup.send(
-            f"✅ **Database Initialized in {channel.mention}!**\n"
-            f"Now set your role, channel, and VC using `/set verify role`, `/set verify channel`, and `/set vc`.",
-            ephemeral=True
-        )
-
-
-bot.tree.add_command(set_group)
-
-if __name__ == "__main__":
+    # 2. Start Discord Bot
     if not TOKEN:
         raise ValueError("DISCORD_TOKEN environment variable not found!")
-    bot.run(TOKEN)
+    await bot.start(TOKEN)
+
+
+if __name__ == "__main__":
+    asyncio.run(start_services())
