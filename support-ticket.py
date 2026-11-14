@@ -7,7 +7,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 load_dotenv()
-TOKEN = os.getenv("SUPPORT_TOKEN", os.getenv("DISCORD_TOKEN"))
+TOKEN = os.getenv("SUPPORT_TOKEN", os.getenv("SUPPORT_DISCORD_TOKEN"))
 
 intents = discord.Intents.default()
 intents.members = True
