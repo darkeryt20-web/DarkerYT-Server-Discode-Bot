@@ -5,11 +5,11 @@ import asyncio
 import datetime
 import discord
 from discord import app_commands
-from discord.ext import commands, tasks
+from discord.ext import commands
 from dotenv import load_dotenv
 
 load_dotenv()
-TOKEN = os.getenv("GIVEAWAY_TOKEN", os.getenv("DISCORD_TOKEN"))
+TOKEN = os.getenv("GIVEAWAY_TOKEN", os.getenv("GIVEWAY_DISCORD_TOKEN"))
 
 intents = discord.Intents.default()
 intents.members = True
@@ -21,14 +21,14 @@ intents.message_content = True
 class GiveawayModal(discord.ui.Modal, title="Create Pro Giveaway"):
     title_input = discord.ui.TextInput(
         label="Giveaway Name",
-        placeholder="e.g. DIALOG ZOOM V2RAY",
+        placeholder="e.g. NITRO BOOST / PREMIUM KEY / V2RAY",
         required=True,
         max_length=100
     )
     details_input = discord.ui.TextInput(
         label="Giveaway Details",
         style=discord.TextStyle.paragraph,
-        placeholder="Package : Dialog Zoom\nPerformance : Ultra-Fast Speed & Low Ping\nValidity : 30 Days\nBandwidth: 2TB High-Speed Data",
+        placeholder="Item : Discord Nitro 1 Month\nFeatures : Custom Emoji & HD Streaming\nValidity : 30 Days\nSource : Official Store",
         required=True,
         max_length=1000
     )
@@ -118,6 +118,7 @@ class GiveawayModal(discord.ui.Modal, title="Create Pro Giveaway"):
 
         bot.active_giveaways[msg.id] = giveaway_data
 
+        # Save to DB channel
         db_channel = guild.get_channel(db_channel_id)
         if db_channel:
             db_msg = await db_channel.send(f"```json\n{json.dumps(giveaway_data)}\n```")
@@ -152,6 +153,7 @@ class GiveawayJoinView(discord.ui.View):
             giveaway["participants"].append(user_id)
             status_msg = "✅ You have successfully **joined** the giveaway! Best of luck!"
 
+        # Update embed entry count
         embed = interaction.message.embeds[0]
         desc = embed.description
         lines = desc.split("\n")
@@ -279,6 +281,7 @@ class ClouskeeGiveawayBot(commands.Bot):
         except discord.HTTPException:
             pass
 
+        # Send individual prizes to winners via DM
         for idx, winner_id in enumerate(winners):
             winner_member = guild.get_member(winner_id)
             prize_code = prizes[idx] if idx < len(prizes) else "Your special reward!"
@@ -297,7 +300,7 @@ class ClouskeeGiveawayBot(commands.Bot):
                 except discord.Forbidden:
                     pass
 
-    @tasks.loop(seconds=10)
+    @commands.loop(seconds=10)
     async def giveaway_checker(self):
         current_time = int(datetime.datetime.utcnow().timestamp())
         for msg_id, g in list(self.active_giveaways.items()):
