@@ -9,7 +9,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 load_dotenv()
-TOKEN = os.getenv("DISCORD_TOKEN")
+TOKEN = os.getenv("VERIFY_DISCORD_TOKEN")
 
 # ==================== KOYEB HEALTH CHECK SERVER ====================
 class HealthCheckHandler(BaseHTTPRequestHandler):
