@@ -5,11 +5,11 @@ import asyncio
 import datetime
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 load_dotenv()
-TOKEN = os.getenv("GIVEAWAY_TOKEN", os.getenv("GIVEWAY_DISCORD_TOKEN"))
+TOKEN = os.getenv("GIVEAWAY_TOKEN", os.getenv("DISCORD_TOKEN"))
 
 intents = discord.Intents.default()
 intents.members = True
@@ -118,7 +118,6 @@ class GiveawayModal(discord.ui.Modal, title="Create Pro Giveaway"):
 
         bot.active_giveaways[msg.id] = giveaway_data
 
-        # Save to DB channel
         db_channel = guild.get_channel(db_channel_id)
         if db_channel:
             db_msg = await db_channel.send(f"```json\n{json.dumps(giveaway_data)}\n```")
@@ -153,10 +152,8 @@ class GiveawayJoinView(discord.ui.View):
             giveaway["participants"].append(user_id)
             status_msg = "✅ You have successfully **joined** the giveaway! Best of luck!"
 
-        # Update embed entry count
         embed = interaction.message.embeds[0]
         desc = embed.description
-        # Replace entry count line
         lines = desc.split("\n")
         for i, line in enumerate(lines):
             if "Entries:" in line:
@@ -264,7 +261,6 @@ class ClouskeeGiveawayBot(commands.Bot):
 
         winner_mentions = ", ".join([f"<@{uid}>" for uid in winners]) if winners else "No valid entries"
 
-        now_timestamp = int(datetime.datetime.utcnow().timestamp())
         embed = discord.Embed(
             title=f"🎁 {giveaway['title']} (Ended)",
             description=(
@@ -283,7 +279,6 @@ class ClouskeeGiveawayBot(commands.Bot):
         except discord.HTTPException:
             pass
 
-        # Send individual prizes to winners via DM
         for idx, winner_id in enumerate(winners):
             winner_member = guild.get_member(winner_id)
             prize_code = prizes[idx] if idx < len(prizes) else "Your special reward!"
@@ -302,7 +297,7 @@ class ClouskeeGiveawayBot(commands.Bot):
                 except discord.Forbidden:
                     pass
 
-    @commands.loopy(seconds=10)
+    @tasks.loop(seconds=10)
     async def giveaway_checker(self):
         current_time = int(datetime.datetime.utcnow().timestamp())
         for msg_id, g in list(self.active_giveaways.items()):
