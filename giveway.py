@@ -18,114 +18,6 @@ intents.voice_states = True
 intents.message_content = True
 
 
-class GiveawayModal(discord.ui.Modal, title="Create Pro Giveaway"):
-    title_input = discord.ui.TextInput(
-        label="Giveaway Name",
-        placeholder="e.g. NITRO BOOST / PREMIUM KEY / V2RAY",
-        required=True,
-        max_length=100
-    )
-    details_input = discord.ui.TextInput(
-        label="Giveaway Details",
-        style=discord.TextStyle.paragraph,
-        placeholder="Item : Discord Nitro 1 Month\nFeatures : Custom Emoji & HD Streaming\nValidity : 30 Days\nSource : Official Store",
-        required=True,
-        max_length=1000
-    )
-    duration_input = discord.ui.TextInput(
-        label="Duration in Hours",
-        placeholder="e.g. 24 (for 24 hours)",
-        required=True,
-        max_length=5
-    )
-    winners_input = discord.ui.TextInput(
-        label="Winners Count",
-        placeholder="e.g. 1 or 3",
-        required=True,
-        max_length=3
-    )
-    prizes_input = discord.ui.TextInput(
-        label="Gift Codes / Prizes (Comma separated)",
-        style=discord.TextStyle.paragraph,
-        placeholder="Code1-XXXX, Code2-YYYY, Code3-ZZZZ",
-        required=True,
-        max_length=1000
-    )
-
-    async def on_submit(self, interaction: discord.Interaction):
-        bot: ClouskeeGiveawayBot = interaction.client
-        guild = interaction.guild
-        guild_id = guild.id
-        config = bot.configs.get(guild_id, {})
-
-        ch_id = config.get("giveaway_channel_id")
-        db_channel_id = config.get("db_channel_id")
-
-        if not ch_id or not db_channel_id:
-            return await interaction.response.send_message(
-                "⚠️ Giveaway channel or Database channel is not configured! Use `/set giveaway channel` and `/set db`.",
-                ephemeral=True
-            )
-
-        channel = guild.get_channel(ch_id)
-        if not channel:
-            return await interaction.response.send_message("⚠️ Giveaway channel not found!", ephemeral=True)
-
-        try:
-            duration_hours = float(self.duration_input.value.strip())
-            winners_count = int(self.winners_input.value.strip())
-        except ValueError:
-            return await interaction.response.send_message("⚠️ Duration and Winners must be valid numbers!", ephemeral=True)
-
-        prizes = [p.strip() for p in self.prizes_input.value.replace("\n", ",").split(",") if p.strip()]
-        if len(prizes) < winners_count:
-            return await interaction.response.send_message(
-                f"⚠️ You provided only {len(prizes)} gifts, but requested {winners_count} winners! Please provide enough unique gifts.",
-                ephemeral=True
-            )
-
-        end_time = datetime.datetime.utcnow() + datetime.timedelta(hours=duration_hours)
-        end_timestamp = int(end_time.timestamp())
-
-        embed = discord.Embed(
-            title=f"🎁 {self.title_input.value.strip()}",
-            description=(
-                f"{self.details_input.value.strip()}\n\n"
-                f"🕒 **Ends At:** <t:{end_timestamp}:F> (<t:{end_timestamp}:R>)\n"
-                f"🏆 **Winners:** `{winners_count}`\n"
-                f"👤 **Hosted by:** {interaction.user.mention}\n"
-                f"📌 **Entries:** `0`"
-            ),
-            color=0x00FF88
-        )
-        embed.set_footer(text="Clouskee Giveaway System")
-
-        msg = await channel.send(embed=embed, view=GiveawayJoinView())
-
-        giveaway_data = {
-            "message_id": msg.id,
-            "channel_id": channel.id,
-            "guild_id": guild_id,
-            "title": self.title_input.value.strip(),
-            "details": self.details_input.value.strip(),
-            "host_id": interaction.user.id,
-            "winners_count": winners_count,
-            "end_time": end_timestamp,
-            "prizes": prizes[:winners_count],
-            "participants": [],
-            "ended": False
-        }
-
-        bot.active_giveaways[msg.id] = giveaway_data
-
-        db_channel = guild.get_channel(db_channel_id)
-        if db_channel:
-            db_msg = await db_channel.send(f"```json\n{json.dumps(giveaway_data)}\n```")
-            giveaway_data["db_msg_id"] = db_msg.id
-
-        await interaction.response.send_message(f"✅ Giveaway successfully created in {channel.mention}!", ephemeral=True)
-
-
 class GiveawayJoinView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -341,17 +233,91 @@ async def set_giveaway_channel(interaction: discord.Interaction, channel: discor
     await interaction.response.send_message(f"✅ Giveaway channel set to {channel.mention} and saved to DB!", ephemeral=True)
 
 
-@bot.tree.command(name="giveaway", description="Giveaway management commands")
-@app_commands.describe(action="Select action (type 'create' to open giveaway form)")
-@app_commands.choices(action=[
-    app_commands.Choice(name="create", value="create")
-])
-async def giveaway_slash(interaction: discord.Interaction, action: str):
+@bot.tree.command(name="giveaway", description="Create a new professional giveaway")
+@app_commands.describe(
+    title="Giveaway Name (e.g. NITRO BOOST / V2RAY)",
+    details="Giveaway details (e.g. Validity: 30 Days)",
+    duration_hours="Duration in hours (e.g. 24)",
+    winners_count="Number of winners (e.g. 1)",
+    prizes="Gift codes separated by commas (e.g. CODE-123)"
+)
+async def create_giveaway_slash(
+    interaction: discord.Interaction,
+    title: str,
+    details: str,
+    duration_hours: float,
+    winners_count: int,
+    prizes: str
+):
     if not is_server_owner(interaction):
         return await interaction.response.send_message("⛔ **Access Denied:** Server Owner only.", ephemeral=True)
 
-    if action == "create":
-        await interaction.response.send_modal(GiveawayModal())
+    await interaction.response.defer(ephemeral=True)
+
+    guild = interaction.guild
+    guild_id = guild.id
+    config = bot.configs.get(guild_id, {})
+
+    ch_id = config.get("giveaway_channel_id")
+    db_channel_id = config.get("db_channel_id")
+
+    if not ch_id or not db_channel_id:
+        return await interaction.followup.send(
+            "⚠️ Giveaway channel or Database channel is not configured! Use `/set giveaway channel` and `/set db`.",
+            ephemeral=True
+        )
+
+    channel = guild.get_channel(ch_id)
+    if not channel:
+        return await interaction.followup.send("⚠️ Giveaway channel not found!", ephemeral=True)
+
+    prize_list = [p.strip() for p in prizes.replace("\n", ",").split(",") if p.strip()]
+    if len(prize_list) < winners_count:
+        return await interaction.followup.send(
+            f"⚠️ You provided only {len(prize_list)} gifts, but requested {winners_count} winners! Please provide enough unique gifts.",
+            ephemeral=True
+        )
+
+    end_time = datetime.datetime.utcnow() + datetime.timedelta(hours=duration_hours)
+    end_timestamp = int(end_time.timestamp())
+
+    embed = discord.Embed(
+        title=f"🎁 {title}",
+        description=(
+            f"{details}\n\n"
+            f"🕒 **Ends At:** <t:{end_timestamp}:F> (<t:{end_timestamp}:R>)\n"
+            f"🏆 **Winners:** `{winners_count}`\n"
+            f"👤 **Hosted by:** {interaction.user.mention}\n"
+            f"📌 **Entries:** `0`"
+        ),
+        color=0x00FF88
+    )
+    embed.set_footer(text="Clouskee Giveaway System")
+
+    msg = await channel.send(embed=embed, view=GiveawayJoinView())
+
+    giveaway_data = {
+        "message_id": msg.id,
+        "channel_id": channel.id,
+        "guild_id": guild_id,
+        "title": title,
+        "details": details,
+        "host_id": interaction.user.id,
+        "winners_count": winners_count,
+        "end_time": end_timestamp,
+        "prizes": prize_list[:winners_count],
+        "participants": [],
+        "ended": False
+    }
+
+    bot.active_giveaways[msg.id] = giveaway_data
+
+    db_channel = guild.get_channel(db_channel_id)
+    if db_channel:
+        db_msg = await db_channel.send(f"```json\n{json.dumps(giveaway_data)}\n```")
+        giveaway_data["db_msg_id"] = db_msg.id
+
+    await interaction.followup.send(f"✅ Giveaway successfully created in {channel.mention}!", ephemeral=True)
 
 
 @set_group.command(name="vc", description="Set the 24/7 Voice Channel for the Giveaway Bot")
@@ -419,7 +385,7 @@ async def set_db(interaction: discord.Interaction, channel: discord.TextChannel)
         await bot.save_config_to_db(guild)
         await interaction.followup.send(
             f"✅ **Giveaway Database Initialized in {channel.mention}!**\n"
-            f"Now set your giveaway channel using `/set giveaway channel` and `/giveaway create`.",
+            f"Now set your giveaway channel using `/set giveaway channel` and `/giveaway`.",
             ephemeral=True
         )
 
