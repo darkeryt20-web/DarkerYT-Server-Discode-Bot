@@ -341,12 +341,17 @@ async def set_giveaway_channel(interaction: discord.Interaction, channel: discor
     await interaction.response.send_message(f"✅ Giveaway channel set to {channel.mention} and saved to DB!", ephemeral=True)
 
 
-@bot.tree.command(name="create", description="Create a new professional giveaway")
-async def create_giveaway_slash(interaction: discord.Interaction):
+@bot.tree.command(name="giveaway", description="Giveaway management commands")
+@app_commands.describe(action="Select action (type 'create' to open giveaway form)")
+@app_commands.choices(action=[
+    app_commands.Choice(name="create", value="create")
+])
+async def giveaway_slash(interaction: discord.Interaction, action: str):
     if not is_server_owner(interaction):
         return await interaction.response.send_message("⛔ **Access Denied:** Server Owner only.", ephemeral=True)
 
-    await interaction.response.send_modal(GiveawayModal())
+    if action == "create":
+        await interaction.response.send_modal(GiveawayModal())
 
 
 @set_group.command(name="vc", description="Set the 24/7 Voice Channel for the Giveaway Bot")
@@ -414,7 +419,7 @@ async def set_db(interaction: discord.Interaction, channel: discord.TextChannel)
         await bot.save_config_to_db(guild)
         await interaction.followup.send(
             f"✅ **Giveaway Database Initialized in {channel.mention}!**\n"
-            f"Now set your giveaway channel using `/set giveaway channel` and `/create giveaway`.",
+            f"Now set your giveaway channel using `/set giveaway channel` and `/giveaway create`.",
             ephemeral=True
         )
 
@@ -423,5 +428,5 @@ bot.tree.add_command(set_group)
 
 if __name__ == "__main__":
     if not TOKEN:
-        raise ValueError("GIVEAWAY_TOKEN or DISCORD_TOKEN environment variable not found!")
+        raise ValueError("GIVEWAY_DISCORD_TOKEN environment variable not found!")
     bot.run(TOKEN)
