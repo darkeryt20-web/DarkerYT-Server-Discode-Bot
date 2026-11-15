@@ -118,7 +118,6 @@ class GiveawayModal(discord.ui.Modal, title="Create Pro Giveaway"):
 
         bot.active_giveaways[msg.id] = giveaway_data
 
-        # Save to DB channel
         db_channel = guild.get_channel(db_channel_id)
         if db_channel:
             db_msg = await db_channel.send(f"```json\n{json.dumps(giveaway_data)}\n```")
@@ -153,7 +152,6 @@ class GiveawayJoinView(discord.ui.View):
             giveaway["participants"].append(user_id)
             status_msg = "✅ You have successfully **joined** the giveaway! Best of luck!"
 
-        # Update embed entry count
         embed = interaction.message.embeds[0]
         desc = embed.description
         lines = desc.split("\n")
@@ -281,7 +279,6 @@ class ClouskeeGiveawayBot(commands.Bot):
         except discord.HTTPException:
             pass
 
-        # Send individual prizes to winners via DM
         for idx, winner_id in enumerate(winners):
             winner_member = guild.get_member(winner_id)
             prize_code = prizes[idx] if idx < len(prizes) else "Your special reward!"
@@ -322,8 +319,6 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
             await asyncio.sleep(2)
             await bot.ensure_vc_connection(guild)
 
-
-# ==================== SLASH COMMANDS (OWNER ONLY) ====================
 
 def is_server_owner(interaction: discord.Interaction) -> bool:
     return interaction.guild is not None and interaction.user.id == interaction.guild.owner_id
