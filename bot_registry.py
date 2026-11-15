@@ -7,4 +7,5 @@ ACTIVE_BOTS = [
     "support-ticket.py",
     "status.py",
     "safter.py",
+    "giveway.py",
 ]
