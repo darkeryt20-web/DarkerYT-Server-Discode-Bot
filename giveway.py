@@ -5,7 +5,7 @@ import asyncio
 import datetime
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -297,7 +297,7 @@ class ClouskeeGiveawayBot(commands.Bot):
                 except discord.Forbidden:
                     pass
 
-    @commands.loop(seconds=10)
+    @tasks.loop(seconds=10)
     async def giveaway_checker(self):
         current_time = int(datetime.datetime.utcnow().timestamp())
         for msg_id, g in list(self.active_giveaways.items()):
