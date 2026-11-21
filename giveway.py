@@ -53,6 +53,16 @@ class GiveawayJoinView(discord.ui.View):
         embed.description = "\n".join(lines)
         await interaction.message.edit(embed=embed)
 
+        # Save updated participants list to DB channel
+        config = bot.configs.get(interaction.guild.id, {})
+        db_channel = interaction.guild.get_channel(config.get("db_channel_id"))
+        if db_channel and giveaway.get("db_msg_id"):
+            try:
+                db_msg = await db_channel.fetch_message(giveaway["db_msg_id"])
+                await db_msg.edit(content=f"```json\n{json.dumps(giveaway)}\n```")
+            except discord.NotFound:
+                pass
+
         await interaction.response.send_message(status_msg, ephemeral=True)
 
 
@@ -151,6 +161,7 @@ class ClouskeeGiveawayBot(commands.Bot):
             winners_count = min(winners_count, len(participants))
             winners = random.sample(participants, winners_count)
 
+        giveaway["winners"] = winners
         winner_mentions = ", ".join([f"<@{uid}>" for uid in winners]) if winners else "No valid entries"
 
         embed = discord.Embed(
@@ -170,6 +181,16 @@ class ClouskeeGiveawayBot(commands.Bot):
             await msg.edit(embed=embed, view=None)
         except discord.HTTPException:
             pass
+
+        # Update DB message so it shows ended: true and saved winners
+        guild_config = self.configs.get(guild.id, {})
+        db_channel = guild.get_channel(guild_config.get("db_channel_id"))
+        if db_channel and giveaway.get("db_msg_id"):
+            try:
+                db_msg = await db_channel.fetch_message(giveaway["db_msg_id"])
+                await db_msg.edit(content=f"```json\n{json.dumps(giveaway)}\n```")
+            except discord.NotFound:
+                pass
 
         for idx, winner_id in enumerate(winners):
             winner_member = guild.get_member(winner_id)
@@ -363,6 +384,7 @@ async def set_db(interaction: discord.Interaction, channel: discord.TextChannel)
             if data.get("type") == "GIVEAWAY_CONFIG":
                 latest_config = data
             elif "message_id" in data and not data.get("ended"):
+                data["db_msg_id"] = msg.id
                 bot.active_giveaways[data["message_id"]] = data
         except json.JSONDecodeError:
             continue
