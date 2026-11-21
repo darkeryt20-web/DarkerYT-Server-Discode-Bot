@@ -8,4 +8,5 @@ ACTIVE_BOTS = [
     "status.py",
     "safter.py",
     "giveway.py",
+    "invite_r.py",
 ]
