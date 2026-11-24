@@ -9,7 +9,7 @@ from supabase import create_client, Client
 
 load_dotenv()
 
-TOKEN = os.getenv("ACTIVITY_DISCORD_TOKEN", os.getenv("DISCORD_TOKEN"))
+TOKEN = os.getenv("ACTIVITY_DISCORD_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
