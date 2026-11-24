@@ -25,74 +25,145 @@ intents.voice_states = True
 intents.message_content = True
 
 
-def extract_active_activity(member: discord.Member):
+def _safe_url(obj, attr_name: str):
+    try:
+        val = getattr(obj, attr_name, None)
+        return str(val) if val else None
+    except Exception:
+        return None
+
+
+def serialize_single_activity(act) -> dict | None:
+    if not act:
+        return None
+
+    act_type = act.type.name if hasattr(act.type, "name") else str(act.type)
+    name = getattr(act, "name", None)
+    details = getattr(act, "details", None)
+    state = getattr(act, "state", None)
+    emoji_str = str(getattr(act, "emoji")) if getattr(act, "emoji", None) else None
+
+    # Extract images across Games/RPC, Spotify, and general activities
+    large_image = (
+        _safe_url(act, "large_image_url")
+        or _safe_url(act, "album_cover_url")
+    )
+    small_image = _safe_url(act, "small_image_url")
+
+    assets = getattr(act, "assets", None)
+    raw_large_asset = None
+    raw_small_asset = None
+    if isinstance(assets, dict):
+        raw_large_asset = assets.get("large_image")
+        raw_small_asset = assets.get("small_image")
+        if not large_image and isinstance(raw_large_asset, str) and raw_large_asset.startswith("http"):
+            large_image = raw_large_asset
+        if not small_image and isinstance(raw_small_asset, str) and raw_small_asset.startswith("http"):
+            small_image = raw_small_asset
+
+    timestamps = None
+    if getattr(act, "timestamps", None):
+        ts = act.timestamps
+        if isinstance(ts, dict):
+            timestamps = ts
+        else:
+            timestamps = {
+                "start": getattr(ts, "get", lambda k: getattr(ts, k, None))("start") if hasattr(ts, "start") else None,
+                "end": getattr(ts, "get", lambda k: getattr(ts, k, None))("end") if hasattr(ts, "end") else None,
+            }
+
+    item = {
+        "type": act_type,
+        "name": name,
+        "details": details,
+        "state": state,
+        "emoji": emoji_str,
+        "large_image": large_image,
+        "small_image": small_image,
+        "application_id": getattr(act, "application_id", None),
+        "timestamps": timestamps,
+    }
+
+    if not any([item["name"], item["details"], item["state"], item["emoji"], item["large_image"], item["small_image"]]):
+        return None
+
+    return item
+
+
+def build_activity_payload(member: discord.Member) -> dict | None:
     if not member or member.bot or not member.activities:
         return None
 
-    chosen = None
+    all_activities = []
     for act in member.activities:
-        if act.type != discord.ActivityType.custom:
-            chosen = act
-            break
+        parsed = serialize_single_activity(act)
+        if parsed:
+            all_activities.append(parsed)
 
-    if chosen is None:
-        for act in member.activities:
-            if getattr(act, "name", None) or getattr(act, "state", None) or getattr(act, "emoji", None):
-                chosen = act
+    if not all_activities:
+        return None
+
+    # Primary activity: prefer non-custom activity (game/music/rpc), else first valid activity
+    primary = None
+    for act_item in all_activities:
+        if act_item["type"] != "custom":
+            primary = act_item
+            break
+    if primary is None:
+        primary = all_activities[0]
+
+    # Best available image across activities
+    best_large_image = primary.get("large_image")
+    best_small_image = primary.get("small_image")
+    if not best_large_image:
+        for act_item in all_activities:
+            if act_item.get("large_image"):
+                best_large_image = act_item["large_image"]
+                break
+    if not best_small_image:
+        for act_item in all_activities:
+            if act_item.get("small_image"):
+                best_small_image = act_item["small_image"]
                 break
 
-    if chosen is None:
-        return None
-
-    large_image = None
-    try:
-        large_image = getattr(chosen, "large_image_url", None)
-    except Exception:
-        large_image = None
-
-    emoji_str = None
-    if getattr(chosen, "emoji", None):
-        emoji_str = str(chosen.emoji)
-
-    payload = {
-        "type": chosen.type.name if hasattr(chosen.type, "name") else str(chosen.type),
-        "name": getattr(chosen, "name", None),
-        "details": getattr(chosen, "details", None),
-        "state": getattr(chosen, "state", None),
-        "emoji": emoji_str,
-        "large_image": large_image,
+    return {
+        "type": primary["type"],
+        "name": primary["name"],
+        "details": primary["details"],
+        "state": primary["state"],
+        "emoji": primary["emoji"],
+        "large_image": best_large_image,
+        "small_image": best_small_image,
+        "activities": all_activities,
     }
 
-    if not any([payload["name"], payload["details"], payload["state"], payload["emoji"]]):
-        return None
 
-    return payload
-
-
-def _update_supabase_activity_sync(discord_id: str, activity_data):
+def _update_supabase_activity_sync(discord_id: str, activity_data: dict | None) -> int:
     if not supabase:
         raise RuntimeError("Supabase client is not initialized. Check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.")
-    return (
+    res = (
         supabase.table("profiles")
         .update({"discord_activity": activity_data})
         .eq("discord_id", discord_id)
         .execute()
     )
+    data = getattr(res, "data", None)
+    return len(data) if isinstance(data, list) else 0
 
 
-async def sync_member_discord_activity(member: discord.Member) -> bool:
+async def sync_member_discord_activity(member: discord.Member) -> tuple[bool, int, dict | None]:
     if not member or member.bot or not supabase:
-        return False
-    activity_data = extract_active_activity(member)
-    await asyncio.to_thread(_update_supabase_activity_sync, str(member.id), activity_data)
-    return True
+        return False, 0, None
+    activity_data = build_activity_payload(member)
+    matched_rows = await asyncio.to_thread(_update_supabase_activity_sync, str(member.id), activity_data)
+    return True, matched_rows, activity_data
 
 
 class ClouskeeActivityBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=intents)
-        # {guild_id: {"db_channel_id": int, "db_msg_id": int, "vc_id": int}}
         self.configs = {}
+        self._last_synced_json: dict[str, str] = {}
 
     async def setup_hook(self):
         await self.tree.sync()
@@ -159,15 +230,26 @@ class ClouskeeActivityBot(commands.Bot):
 bot = ClouskeeActivityBot()
 
 
+async def _handle_fast_presence_sync(member: discord.Member):
+    uid = str(member.id)
+    payload = build_activity_payload(member)
+    encoded = json.dumps(payload, sort_keys=True)
+    if bot._last_synced_json.get(uid) == encoded:
+        return
+    bot._last_synced_json[uid] = encoded
+    try:
+        _, matched, _ = await sync_member_discord_activity(member)
+        print(f"[Activity Sync] user={uid} matched_rows={matched} has_activity={payload is not None}")
+    except Exception as e:
+        bot._last_synced_json.pop(uid, None)
+        print(f"[Activity Sync Error] user={uid}: {e}")
+
+
 @bot.event
 async def on_presence_update(before: discord.Member, after: discord.Member):
     if after.bot:
         return
-    if extract_active_activity(before) != extract_active_activity(after):
-        try:
-            await sync_member_discord_activity(after)
-        except Exception as e:
-            print(f"[Activity Sync Error] {after.id}: {e}")
+    asyncio.create_task(_handle_fast_presence_sync(after))
 
 
 @bot.event
@@ -250,7 +332,7 @@ async def set_db(interaction: discord.Interaction, channel: discord.TextChannel)
         )
 
 
-@bot.tree.command(name="syncactivity", description="Sync a member's current Discord activity to Supabase")
+@bot.tree.command(name="syncactivity", description="Sync a member's current Discord activities & images to Supabase")
 @app_commands.describe(member="Select a member (defaults to yourself)")
 async def sync_activity_cmd(interaction: discord.Interaction, member: discord.Member = None):
     if not is_server_owner(interaction):
@@ -260,12 +342,15 @@ async def sync_activity_cmd(interaction: discord.Interaction, member: discord.Me
     target = member or interaction.user
 
     try:
-        synced = await sync_member_discord_activity(target)
+        synced, matched_rows, preview = await sync_member_discord_activity(target)
         if not synced:
             return await interaction.followup.send("⚠️ Could not sync (bot user or Supabase not configured).", ephemeral=True)
-        activity_preview = extract_active_activity(target)
+        bot._last_synced_json[str(target.id)] = json.dumps(preview, sort_keys=True)
+        dumped = json.dumps(preview, indent=2)
+        if len(dumped) > 1700:
+            dumped = dumped[:1700] + "\n... (truncated)"
         await interaction.followup.send(
-            f"✅ Synced activity for {target.mention} to Supabase.\n```json\n{json.dumps(activity_preview, indent=2)}\n```",
+            f"✅ Synced `{target.id}` to Supabase (`matched_rows={matched_rows}`):\n```json\n{dumped}\n```",
             ephemeral=True
         )
     except Exception as e:
