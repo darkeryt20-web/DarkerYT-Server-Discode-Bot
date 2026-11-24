@@ -39,20 +39,24 @@ def serialize_single_activity(act) -> dict | None:
 
     act_type = act.type.name if hasattr(act.type, "name") else str(act.type)
     name = getattr(act, "name", None)
-    details = getattr(act, "details", None)
-    state = getattr(act, "state", None)
+
+    # Support standard activities as well as discord.Spotify attributes (title, artist, artists)
+    details = getattr(act, "details", None) or getattr(act, "title", None)
+    state = getattr(act, "state", None) or getattr(act, "artist", None)
+    if not state and getattr(act, "artists", None):
+        state = ", ".join(str(a) for a in act.artists if a)
+
     emoji_str = str(getattr(act, "emoji")) if getattr(act, "emoji", None) else None
 
-    # Extract images across Games/RPC, Spotify, and general activities
     large_image = (
         _safe_url(act, "large_image_url")
         or _safe_url(act, "album_cover_url")
     )
     small_image = _safe_url(act, "small_image_url")
+    album_name = getattr(act, "album", None)
+    track_url = _safe_url(act, "track_url")
 
     assets = getattr(act, "assets", None)
-    raw_large_asset = None
-    raw_small_asset = None
     if isinstance(assets, dict):
         raw_large_asset = assets.get("large_image")
         raw_small_asset = assets.get("small_image")
@@ -68,15 +72,24 @@ def serialize_single_activity(act) -> dict | None:
             timestamps = ts
         else:
             timestamps = {
-                "start": getattr(ts, "get", lambda k: getattr(ts, k, None))("start") if hasattr(ts, "start") else None,
-                "end": getattr(ts, "get", lambda k: getattr(ts, k, None))("end") if hasattr(ts, "end") else None,
+                "start": getattr(ts, "start", None),
+                "end": getattr(ts, "end", None),
             }
+    elif getattr(act, "start", None) or getattr(act, "end", None):
+        start_val = getattr(act, "start", None)
+        end_val = getattr(act, "end", None)
+        timestamps = {
+            "start": int(start_val.timestamp() * 1000) if hasattr(start_val, "timestamp") else start_val,
+            "end": int(end_val.timestamp() * 1000) if hasattr(end_val, "timestamp") else end_val,
+        }
 
     item = {
         "type": act_type,
         "name": name,
         "details": details,
         "state": state,
+        "album": album_name,
+        "track_url": track_url,
         "emoji": emoji_str,
         "large_image": large_image,
         "small_image": small_image,
@@ -103,7 +116,6 @@ def build_activity_payload(member: discord.Member) -> dict | None:
     if not all_activities:
         return None
 
-    # Primary activity: prefer non-custom activity (game/music/rpc), else first valid activity
     primary = None
     for act_item in all_activities:
         if act_item["type"] != "custom":
@@ -112,7 +124,6 @@ def build_activity_payload(member: discord.Member) -> dict | None:
     if primary is None:
         primary = all_activities[0]
 
-    # Best available image across activities
     best_large_image = primary.get("large_image")
     best_small_image = primary.get("small_image")
     if not best_large_image:
@@ -131,6 +142,8 @@ def build_activity_payload(member: discord.Member) -> dict | None:
         "name": primary["name"],
         "details": primary["details"],
         "state": primary["state"],
+        "album": primary.get("album"),
+        "track_url": primary.get("track_url"),
         "emoji": primary["emoji"],
         "large_image": best_large_image,
         "small_image": best_small_image,
@@ -164,6 +177,7 @@ class ClouskeeActivityBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
         self.configs = {}
         self._last_synced_json: dict[str, str] = {}
+        self._vc_lock: dict[int, asyncio.Lock] = {}
 
     async def setup_hook(self):
         await self.tree.sync()
@@ -208,23 +222,36 @@ class ClouskeeActivityBot(commands.Bot):
         config["db_msg_id"] = new_msg.id
 
     async def ensure_vc_connection(self, guild: discord.Guild):
-        config = self.configs.get(guild.id, {})
-        vc_id = config.get("vc_id")
-        if not vc_id:
+        if not guild:
             return
+        lock = self._vc_lock.setdefault(guild.id, asyncio.Lock())
+        async with lock:
+            config = self.configs.get(guild.id, {})
+            vc_id = config.get("vc_id")
+            if not vc_id:
+                return
 
-        vc_channel = guild.get_channel(vc_id)
-        if not vc_channel or not isinstance(vc_channel, discord.VoiceChannel):
-            return
+            vc_channel = guild.get_channel(vc_id)
+            if not vc_channel or not isinstance(vc_channel, discord.VoiceChannel):
+                return
 
-        voice_client = guild.voice_client
-        try:
-            if voice_client is None:
-                await vc_channel.connect(self_deaf=True)
-            elif voice_client.channel.id != vc_id:
-                await voice_client.move_to(vc_channel)
-        except Exception as e:
-            print(f"[VC Error] Activity Bot could not join VC: {e}")
+            voice_client = guild.voice_client
+            try:
+                if voice_client is None or not voice_client.is_connected():
+                    if voice_client is not None:
+                        try:
+                            await voice_client.disconnect(force=True)
+                        except Exception:
+                            pass
+                    print(f"[VC Debug] Connecting to voice channel: {vc_channel.name}")
+                    await vc_channel.connect(self_deaf=True, reconnect=True)
+                    print(f"[VC Debug] Successfully connected to {vc_channel.name}!")
+                elif voice_client.channel.id != vc_id:
+                    print(f"[VC Debug] Moving to voice channel: {vc_channel.name}")
+                    await voice_client.move_to(vc_channel)
+                    print(f"[VC Debug] Successfully moved to {vc_channel.name}!")
+            except Exception as e:
+                print(f"[VC Error] Activity Bot could not join VC: {e}")
 
 
 bot = ClouskeeActivityBot()
